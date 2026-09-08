@@ -182,6 +182,9 @@ public final class NativeTextViewCoordinator: NSObject, NSTextViewDelegate {
     /// means the hoisted editedRange/lengthDelta describe a single tracked
     /// edit and incremental fast paths may trust them.
     var pendingEditCount = 0
+    /// Set by `doCommandBy` for one arrow press and consumed by the selection
+    /// hook, so hidden-marker skipping applies to the reader's key presses only.
+    var pendingHorizontalCaretMove: HorizontalCaretMove?
 #if DEBUG
     /// Diagnostic: whether the last completed textDidChange ran with a
     /// trusted single-edit descriptor (fast paths). Read by tests.

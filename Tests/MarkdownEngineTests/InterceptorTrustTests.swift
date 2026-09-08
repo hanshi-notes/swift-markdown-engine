@@ -49,7 +49,11 @@ struct InterceptorTrustTests {
         tv.insertText("x", replacementRange: NSRange(location: 5, length: 0))
 
         #expect(tv.string == "hellox")
+#if DEBUG
+        // `debugLastEditWasTrusted` is a DEBUG-only diagnostic; without this guard
+        // the whole test target fails to compile under `swift test -c release`.
         #expect(coord.debugLastEditWasTrusted == true)
+#endif
     }
 
     @Test func arrowSubstitutionStaysTrusted() {
@@ -60,6 +64,10 @@ struct InterceptorTrustTests {
 
         #expect(tv.string == "abc → def")
         #expect(coord.lastComputedStorage == "abc → def")
+#if DEBUG
+        // `debugLastEditWasTrusted` is a DEBUG-only diagnostic; without this guard
+        // the whole test target fails to compile under `swift test -c release`.
         #expect(coord.debugLastEditWasTrusted == true)
+#endif
     }
 }

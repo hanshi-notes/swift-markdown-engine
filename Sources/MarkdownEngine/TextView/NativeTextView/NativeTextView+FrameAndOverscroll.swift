@@ -320,12 +320,13 @@ extension NativeTextView {
             propagateCaretRevealToEnclosingScroller(range: range)
             return
         }
-        // Only the reading column needs manual reveal; default keeps AppKit's native implementation.
-        guard configuration.readingWidth != nil else {
-            super.scrollRangeToVisible(range)
-            return
-        }
-        // Explicit reveal: native scrollRangeToVisible can't position the container's centered subview.
+        // Explicit reveal for EVERY scrolling configuration, not just the reading
+        // column. `super.scrollRangeToVisible` reveals nothing here: the text view
+        // is not the scroll view's document view (it sits inside
+        // `NativeTextViewContainer`), so AppKit's own reveal has no effect —
+        // measured, with the whole document laid out, the clip view did not move a
+        // point while the caret walked 25 lines past the bottom of the viewport.
+        // This block already did the work correctly; it was only gated off.
         // A caret at the document end has no fragment at its location; step back one
         // char there so the last line's fragment is found (else nothing reveals).
         let docLength = (self.string as NSString).length

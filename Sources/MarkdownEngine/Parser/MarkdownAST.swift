@@ -78,28 +78,37 @@ enum DocumentAST {
             normalizeScopes($0, documentLength: ns.length)
         }
         // Scoped mode: skip building BlockNodes for blocks outside the edit.
-        // Blocks tile the document in order, so one sweep over sorted candidate
-        // ranges replaces scanning every candidate per block (which went
-        // quadratic in formula-rich documents with dozens of candidates).
+        // Blocks tile the document in order and never overlap, so each scope
+        // covers one CONTIGUOUS run of them — binary-searched, the same way
+        // `MarkdownStyler.scopedSlice` already slices tokens. The sweep this
+        // replaces began at block 0, so a keystroke at the END of a long note
+        // walked every block to keep one, while the same keystroke at the head
+        // cost nothing: 0.108 ms vs 0.002 ms at 24k blocks, measured. That is a
+        // caret-position cost wearing a document-size disguise.
+        //
+        // `normalizeScopes` returns sorted, merged, non-overlapping ranges, so a
+        // block can only be shared with the scope immediately before it, never
+        // with an earlier one. That is what makes the single-slot dedup correct.
         let relevant: [(block: Block, scopes: [NSRange]?)]
         if let normalizedScopes {
             var out: [(Block, [NSRange]?)] = []
-            var ci = 0
-            for block in blocks {
-                while ci < normalizedScopes.count,
-                      NSMaxRange(normalizedScopes[ci]) <= block.range.location {
-                    ci += 1
+            var lastIndex = -1
+            for scope in normalizedScopes {
+                var lo = 0, hi = blocks.count
+                while lo < hi {                       // first block ending past the scope start
+                    let m = (lo + hi) / 2
+                    if NSMaxRange(blocks[m].range) > scope.location { hi = m } else { lo = m + 1 }
                 }
-                guard ci < normalizedScopes.count else { break }
-                var intersections: [NSRange] = []
-                var si = ci
-                while si < normalizedScopes.count,
-                      normalizedScopes[si].location < NSMaxRange(block.range) {
-                    intersections.append(normalizedScopes[si])
-                    si += 1
-                }
-                if !intersections.isEmpty {
-                    out.append((block, intersections))
+                let scopeEnd = NSMaxRange(scope)
+                var i = lo
+                while i < blocks.count, blocks[i].range.location < scopeEnd {
+                    if i == lastIndex {
+                        out[out.count - 1].1?.append(scope)
+                    } else {
+                        out.append((blocks[i], [scope]))
+                        lastIndex = i
+                    }
+                    i += 1
                 }
             }
             relevant = out
@@ -118,7 +127,9 @@ enum DocumentAST {
 
     /// Reject malformed UTF-16 ranges, then merge them once so every scoped
     /// consumer can use the same monotonic view of the edit region.
-    private static func normalizeScopes(
+    // Internal rather than private so a test can use the real normalizer as the
+    // oracle for scope selection, instead of duplicating this logic.
+    static func normalizeScopes(
         _ ranges: [NSRange],
         documentLength: Int
     ) -> [NSRange] {

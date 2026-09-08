@@ -942,6 +942,11 @@ extension NativeTextViewCoordinator {
     public func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         // Raw mode: default key handling (no ⇧⇥ outdent, no preview routing).
         if configuration.rawSourceMode { return false }
+        // Record horizontal caret commands so the selection hook knows this
+        // change is the reader's arrow key, not a click or a programmatic
+        // caret. AppKit still performs the move (composed characters, RTL);
+        // only the landing offset is adjusted.
+        pendingHorizontalCaretMove = horizontalCaretMove(for: commandSelector)
         if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
             return handleBacktab(textView)
         }
