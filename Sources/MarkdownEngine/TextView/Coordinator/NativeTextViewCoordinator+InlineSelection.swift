@@ -96,6 +96,7 @@ extension NativeTextViewCoordinator {
     // MARK: - Image Embed Activation
 
     func filterImageEmbedActiveTokens(parsed: ParsedDocument, text: NSString, selectionLocation: Int) {
+        guard configuration.showsMarkdownMarkersWhileEditing, textView?.isEditable != false else { return }
         let activeImageEmbedIndex = imageEmbedToken(
             at: selectionLocation,
             parsed: parsed,

@@ -15,14 +15,17 @@ import AppKit
 
 extension NativeTextView {
     override func copy(_ sender: Any?) {
-        let sel = selectedRange()
-        guard sel.length > 0 else {
-            super.copy(sender)
-            return
-        }
-        let raw = (string as NSString).substring(with: sel)
-        MarkdownPasteboardWriter.write(markdown: raw, to: .general, extensions: configuration.extensions,
-                                       directives: configuration.directives,
-                                       directiveSettings: configuration.directiveSettings)
+        guard selectedRange().length > 0 else { super.copy(sender); return }
+        _ = writeSelection(to: .general, types: [.string, .rtf, .html])
+    }
+
+    override func writeSelection(to pasteboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
+        let selection = selectedRange()
+        guard selection.location != NSNotFound, selection.length > 0,
+              NSMaxRange(selection) <= (string as NSString).length else { return false }
+        let raw = (string as NSString).substring(with: selection)
+        MarkdownPasteboardWriter.write(markdown: raw, to: pasteboard, extensions: configuration.extensions,
+            directives: configuration.directives, directiveSettings: configuration.directiveSettings)
+        return true
     }
 }

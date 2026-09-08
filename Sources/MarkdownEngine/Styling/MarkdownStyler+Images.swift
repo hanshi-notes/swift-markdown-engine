@@ -12,6 +12,27 @@ import Foundation
 
 extension MarkdownStyler {
 
+    static func styleRenderedCodeBlocks(_ ctx: StylingContext) -> [StyledRange] {
+        var attrs: [StyledRange] = []
+        for (index, token) in ctx.tokens.enumerated() where token.kind == .codeBlock {
+            guard !ctx.outsideScope(token.range), !ctx.activeTokenIndices.contains(index),
+                  token.contentRange.length > 0, token.markerRanges.count >= 2 else { continue }
+            let source = ctx.nsText.substring(with: token.contentRange)
+            let language = MarkdownTokenizer.extractLanguage(from: token, in: ctx.nsText as String)
+            guard let image = ctx.services.images.image(forCodeBlock: source, language: language),
+                  image.size.width > 0, image.size.height > 0 else { continue }
+            let available = ctx.layoutBridge?.firstTextContainer?.containerSize.width ?? ctx.configuration.imageEmbed.fallbackMaxWidth
+            let scale = min(1, max(1, available) / image.size.width)
+            attrs.append((token.range, [.backgroundColor: NSColor.clear]))
+            _ = appendRenderedStandaloneBlock(for: token, rawContent: source, image: image,
+                imageBounds: CGRect(origin: .zero, size: NSSize(width: image.size.width * scale, height: image.size.height * scale)),
+                paragraphSpacingBefore: 0, paragraphSpacing: ctx.configuration.imageEmbed.paragraphSpacing,
+                alignment: .left, mode: .collapsedSource(markerTexts: []), restyleOnWidthChange: true,
+                ctx: ctx, attrs: &attrs)
+        }
+        return attrs
+    }
+
     // MARK: Markdown Image Links ![alt](url)
 
     /// Style standalone `![alt](url)` paragraphs by routing the URL through
@@ -75,6 +96,7 @@ extension MarkdownStyler {
                     paragraphSpacing: imageEmbedConfig.paragraphSpacing,
                     alignment: .left,
                     mode: .visibleSource(imageGap: imageEmbedConfig.imageGap),
+                    restyleOnWidthChange: true,
                     ctx: ctx,
                     attrs: &attrs
                 )
@@ -88,6 +110,7 @@ extension MarkdownStyler {
                     paragraphSpacing: imageEmbedConfig.paragraphSpacing,
                     alignment: .left,
                     mode: .collapsedSource(markerTexts: ["![", "]", "(", ")"]),
+                    restyleOnWidthChange: true,
                     ctx: ctx,
                     attrs: &attrs
                 )
@@ -166,6 +189,7 @@ extension MarkdownStyler {
                         paragraphSpacing: imageEmbedConfig.paragraphSpacing,
                         alignment: .left,
                         mode: .visibleSource(imageGap: imageEmbedConfig.imageGap),
+                        restyleOnWidthChange: true,
                         ctx: ctx,
                         attrs: &attrs
                     )
@@ -179,6 +203,7 @@ extension MarkdownStyler {
                         paragraphSpacing: imageEmbedConfig.paragraphSpacing,
                         alignment: .left,
                         mode: .collapsedSource(markerTexts: ["![[", "]]"]),
+                        restyleOnWidthChange: true,
                         ctx: ctx,
                         attrs: &attrs
                     )

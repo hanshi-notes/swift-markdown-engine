@@ -83,6 +83,13 @@ public protocol EmbeddedImageProvider: Sendable {
     /// a different value invalidates the engine's image cache. Embedders
     /// typically combine the IDs of all known images.
     func fingerprint() -> AnyHashable
+
+    /// Optional rendered fence, such as a diagram. Returning nil keeps readable code.
+    func image(forCodeBlock code: String, language: String?) -> NSImage?
+}
+
+public extension EmbeddedImageProvider {
+    func image(forCodeBlock code: String, language: String?) -> NSImage? { nil }
 }
 
 /// What the engine asks an `EmbeddedImageProvider` for.

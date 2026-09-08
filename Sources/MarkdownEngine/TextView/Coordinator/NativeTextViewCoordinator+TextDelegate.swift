@@ -37,7 +37,17 @@ extension NativeTextViewCoordinator {
         }
         let manager = UndoManager()
         undoManagers[key] = manager
+        for name in [NSNotification.Name.NSUndoManagerDidUndoChange, NSNotification.Name.NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(didUndoOrRedo(_:)), name: name, object: manager)
+        }
         return manager
+    }
+
+    @objc private func didUndoOrRedo(_ notification: Notification) {
+        guard let view = textView,
+              notification.object as? UndoManager === undoManagers[documentId ?? "__default__"] else { return }
+        // TextKit 2 can replay text undo without delivering textDidChange.
+        textDidChange(Notification(name: NSText.didChangeNotification, object: view))
     }
 
     /// Drops `documentId`'s undo stack when its switch-away snapshot no longer
@@ -90,13 +100,7 @@ extension NativeTextViewCoordinator {
             pendingEditCount = 0
             pendingEditedRange = nil
             guard !tv.hasMarkedText() else { return }
-            if tv.string != lastSyncedText {
-                let rawText = tv.string
-                DispatchQueue.main.async {
-                    self.lastSyncedText = rawText
-                    self.text = rawText
-                }
-            }
+            publishTextChange(tv.string)
             if let bottomTextView = tv as? NativeTextView,
                let scrollView = tv.enclosingScrollView {
                 bottomTextView.recalcOverscroll(for: scrollView, debugTag: "textDidChange")
@@ -195,12 +199,7 @@ extension NativeTextViewCoordinator {
                        "wiki incremental splice diverged from full rebuild")
             }
 #endif
-            if storageState.storage != self.lastSyncedText {
-                DispatchQueue.main.async {
-                    self.lastSyncedText = storageState.storage
-                    self.text = storageState.storage
-                }
-            }
+            publishTextChange(storageState.storage)
         }
 
         let paragraphRange = fullText.paragraphRange(for: safeSelRange)
@@ -996,6 +995,12 @@ extension NativeTextViewCoordinator {
                     return true
                 }
             }
+        }
+        if let onOpenLink {
+            let target = (link as? URL)?.absoluteString ?? (link as? String ?? "")
+            (textView as? NativeTextView)?.linkClickDidNavigate = true
+            onOpenLink(target)
+            return true
         }
         guard let target = WikiLinkService.resolveIdentifier(link: link, textView: textView, at: charIndex) else {
             // Web link (URL-valued): returning false lets AppKit open the URL

@@ -229,7 +229,7 @@ enum MarkdownStyler {
             nsText: nsText,
             tokens: tokens,
             codeTokens: codeTokens,
-            activeTokenIndices: activeTokenIndices,
+            activeTokenIndices: configuration.showsMarkdownMarkersWhileEditing ? activeTokenIndices : [],
             baseFont: baseFont,
             layoutBridge: layoutBridge,
             baseDefaultLineHeight: baseDefaultLineHeight,
@@ -260,6 +260,7 @@ enum MarkdownStyler {
         result += styleImageLinks(ctx)
         let imgMs = Double(DispatchTime.now().uptimeNanoseconds - imgT0) / 1_000_000
         result += styleTables(ctx)
+        result += styleRenderedCodeBlocks(ctx)
         PerfTrace.note { "  styleAttributes: ast=\(String(format: "%.2f", astMs))ms latex+img4=\(String(format: "%.2f", imgMs))ms styledRanges=\(result.count)" }
         return result
     }

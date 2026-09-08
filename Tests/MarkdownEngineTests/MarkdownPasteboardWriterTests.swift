@@ -17,6 +17,11 @@ import Testing
 @Suite("Pasteboard writer flavors")
 struct MarkdownPasteboardWriterTests {
 
+    @Test func rtfImportUsesImageAlternativesWithoutLoadingURLs() {
+        let body = "<p>Before</p><img src=\"https://example.com/image.png\" alt=\"A &amp; B\"><p>After</p>"
+        #expect(MarkdownPasteboardWriter.rtfFallbackBody(body) == "<p>Before</p>[Image: A &amp; B]<p>After</p>")
+    }
+
     @Test("web archive wraps our html verbatim as its main resource")
     func webArchiveCarriesRealHTML() throws {
         let html = "<html><body><p>a</p><hr><li><input type=\"checkbox\" disabled> t</li></body></html>"

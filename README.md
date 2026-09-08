@@ -412,3 +412,15 @@ for the full text.
 
 ---
 Built by a small team in Munich and Zurich. Day-to-day on [Instagram](https://www.instagram.com/nodes.app).
+
+## Hanshi fork: local preview integration
+
+Hanshi uses `MarkdownEngine` directly from a sibling checkout on its experimental branch. The core remains dependency-free at link time; the host supplies bounded image loading, HighlightKit tokens, SwaTex formulas and Mermaid diagrams.
+
+AppKit hosts can retain `NativeTextViewWrapper.makeCoordinator()`, create the scroll view with `makeAppKitView(coordinator:)`, and apply subsequent wrappers through `updateAppKitView(_:coordinator:)`. Use `isEditable: false` for a selectable preview. The SwiftUI representable calls these same methods. For an editable preview with hidden Markdown markers, set `configuration.showsMarkdownMarkersWhileEditing = false` and keep `isEditable: true`. This presentation flag preserves the source and applies to caret movement, selection, and typing. Its default is `true`, retaining the editor’s existing active-marker behavior.
+
+The coordinator exposes the underlying `textView`, `previewFrame(for:)`, `previewCharacter(at:)`, and `previewRange(fromSourceRange:)` for focus and source-based scroll synchronization. These geometry methods keep TextKit 2 active. Set `onOpenLink` to route all links through the host's navigation policy; an installed handler consumes the navigation.
+
+`EmbeddedImageProvider.image(forCodeBlock:language:)` can supply a pre-rendered diagram. Its default implementation returns nil, retaining readable code. Rendered images and diagrams resize through the existing block invalidation path. Plain-text copy retains Markdown; rich copy emits formatted text.
+
+Run `swift test` for the engine suite and `swift test --filter AppKitPreviewTests` for the AppKit integration contract. Run Hanshi's own tests from its checkout to exercise resource preparation, unsaved drafts, mode switches, links, and synchronized scrolling end to end.

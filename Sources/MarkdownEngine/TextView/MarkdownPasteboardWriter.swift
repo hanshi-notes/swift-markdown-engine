@@ -79,6 +79,9 @@ enum MarkdownPasteboardWriter {
     /// reads full-width yet never wraps in ~72-char columns.
     static func rtfFallbackBody(_ body: String) -> String {
         body.replacingOccurrences(of: "<hr>", with: "<p>\(rtfRuleStandIn)</p>")
+            // The HTML importer must not load remote or relative image URLs during copy.
+            .replacingOccurrences(of: #"<img src="[^"]*" alt="([^"]*)">"#,
+                with: "[Image: $1]", options: .regularExpression)
     }
 
     /// The visible horizontal-rule stand-in for the RTF flavor.

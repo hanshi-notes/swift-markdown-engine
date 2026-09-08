@@ -13,8 +13,8 @@ import SwiftUI
 /// `NSTextViewDelegate` that bridges ``NativeTextViewWrapper`` and the
 /// underlying `NSTextView`.
 ///
-/// The coordinator is created automatically by SwiftUI; embedders never
-/// construct one directly. Behaviors that don't fit in the main file live
+/// SwiftUI creates the coordinator automatically; AppKit hosts retain one
+/// from `NativeTextViewWrapper.makeCoordinator()`. Behaviors that don't fit in the main file live
 /// in extensions (Autocorrect, CodeBlocks, Find, InlineSelection,
 /// Notifications, Restyling, TextDelegate, WritingTools).
 public final class NativeTextViewCoordinator: NSObject, NSTextViewDelegate {
@@ -44,6 +44,30 @@ public final class NativeTextViewCoordinator: NSObject, NSTextViewDelegate {
     /// switch-back a mismatch means the file was rewritten while backgrounded, so
     /// the now-stale undo stack is dropped. Pruned alongside `undoManagers`.
     var undoContentSnapshots: [String: String] = [:]
+    /// Current Markdown source, including committed edits awaiting binding delivery.
+    public var sourceText: String { lastSyncedText }
+    var presentationIsEditable: Bool?
+    private var pendingTextChange: (id: UUID, documentID: String?, text: String)?
+    /// Latest committed native edit whose binding has not been delivered yet.
+    public var pendingSourceText: String? {
+        pendingTextChange?.documentID == documentId ? pendingTextChange?.text : nil
+    }
+
+    func updateTextBinding(_ binding: Binding<String>) { _text = binding }
+
+    func publishTextChange(_ value: String) {
+        guard value != lastSyncedText else { return }
+        lastSyncedText = value
+        let id = UUID()
+        pendingTextChange = (id, documentId, value)
+        // Capture this document's binding before a host can select another note.
+        let binding = $text
+        DispatchQueue.main.async { [weak self] in
+            binding.wrappedValue = value
+            if self?.pendingTextChange?.id == id { self?.pendingTextChange = nil }
+        }
+    }
+
     @Binding var text: String
     @Binding var isWikiLinkActive: Bool
     var fontName: String
@@ -70,12 +94,14 @@ public final class NativeTextViewCoordinator: NSObject, NSTextViewDelegate {
     var lastWikiFingerprint: AnyHashable?
     private var busObservers: [NSObjectProtocol] = []
     private var registeredAppearanceObserverName: Notification.Name?
-    weak var textView: NSTextView?
+    public internal(set) weak var textView: NSTextView?
     /// Owns the scroll-away header (build, content refresh, collapse/expand,
     /// teardown). Created on first reconcile with a non-nil header.
     var headerController: ScrollingHeaderController?
     var layoutBridge: LayoutBridge?
     var layoutDelegate: MarkdownLayoutManagerDelegate?
+    /// Intercepts all link navigation, including relative and web URLs.
+    public var onOpenLink: ((String) -> Void)?
     var onLinkClick: ((String) -> Void)?
     var onCaretRectChange: ((CGRect) -> Void)?
     var onTextMutation: ((MarkdownTextMutation) -> Void)?

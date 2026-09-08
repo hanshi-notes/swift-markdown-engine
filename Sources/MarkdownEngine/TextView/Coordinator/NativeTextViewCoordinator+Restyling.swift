@@ -334,13 +334,14 @@ extension NativeTextViewCoordinator {
     /// three times per keystroke on identical inputs (pre-edit ask,
     /// selection change, textDidChange).
     func activeTokenIndices(parsed: ParsedDocument, selection: NSRange, in text: NSString, suppressed: Bool) -> Set<Int> {
+        let suppressMarkers = suppressed || !configuration.showsMarkdownMarkersWhileEditing
         if let memo = activeTokenMemo, memo.version == parsed.version,
-           memo.selection == selection, memo.suppressed == suppressed {
+           memo.selection == selection, memo.suppressed == suppressMarkers {
             return memo.result
         }
         let result = MarkdownDetection.computeActiveTokenIndices(
-            selectionRange: selection, tokens: parsed.tokens, in: text, suppressed: suppressed)
-        activeTokenMemo = (parsed.version, selection, suppressed, result)
+            selectionRange: selection, tokens: parsed.tokens, in: text, suppressed: suppressMarkers)
+        activeTokenMemo = (parsed.version, selection, suppressMarkers, result)
         return result
     }
 

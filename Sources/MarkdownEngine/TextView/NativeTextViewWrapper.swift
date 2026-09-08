@@ -217,6 +217,11 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
+        makeAppKitView(coordinator: context.coordinator)
+    }
+
+    /// Creates the same editor for an AppKit host. Retain the coordinator until teardown.
+    public func makeAppKitView(coordinator: Coordinator) -> NSScrollView {
         let scrollView = ClampedScrollView()
         scrollView.fitsContent = configuration.heightBehavior == .fitsContent
         scrollView.borderType = .noBorder
@@ -255,20 +260,20 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         textContainer.heightTracksTextView = false
 
         let layoutDelegate = MarkdownLayoutManagerDelegate()
-        context.coordinator.layoutDelegate = layoutDelegate
+        coordinator.layoutDelegate = layoutDelegate
         textLayoutManager.delegate = layoutDelegate
         textView.configuration = configuration
         textView.overscrollPercent = configuration.overscroll.percent
         textView.maxOverscrollPoints = configuration.overscroll.maxPoints
         textView.minOverscrollPoints = configuration.overscroll.minPoints
-        context.coordinator.configuration = configuration
+        coordinator.configuration = configuration
         textView.insertionPointColor = configuration.theme.bodyText
         textView.isEditable = isEditable
         textView.isSelectable = true
         textView.isRichText = true
         let initialState = WikiLinkService.makeDisplayState(from: text) { configuration.services.wikiLinks.name(forID: $0) }
         textView.string = initialState.display
-        textView.delegate = context.coordinator
+        textView.delegate = coordinator
         textView.isVerticallyResizable = true
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.postsFrameChangedNotifications = true
@@ -299,7 +304,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         }
         // Create TextKit 2 layout bridge
         let bridge = LayoutBridge(textLayoutManager)
-        context.coordinator.layoutBridge = bridge
+        coordinator.layoutBridge = bridge
         textView.layoutBridge = bridge
 
         // The document view is ALWAYS a container (`NativeTextViewContainer`) hosting
@@ -326,14 +331,14 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         scrollView.clampToInsets()
         scrollView.reflectScrolledClipView(scrollView.contentView)
 
-        context.coordinator.textView = textView
-        context.coordinator.wikiLinkMetadata = initialState.metadata
-        context.coordinator.onCaretRectChange = onCaretRectChange
-        context.coordinator.onTextMutation = onTextMutation
-        context.coordinator.onBuildContextMenu = onBuildContextMenu
-        context.coordinator.onInlineSelectionChange = onInlineSelectionChange
-        context.coordinator.onInlinePreviewKey = onInlinePreviewKey
-        context.coordinator.onCodeBlockSelectionChange = onCodeBlockSelectionChange
+        coordinator.textView = textView
+        coordinator.wikiLinkMetadata = initialState.metadata
+        coordinator.onCaretRectChange = onCaretRectChange
+        coordinator.onTextMutation = onTextMutation
+        coordinator.onBuildContextMenu = onBuildContextMenu
+        coordinator.onInlineSelectionChange = onInlineSelectionChange
+        coordinator.onInlinePreviewKey = onInlinePreviewKey
+        coordinator.onCodeBlockSelectionChange = onCodeBlockSelectionChange
 
         textView.recalcOverscroll(for: scrollView)
         textView.setPlaceholder(placeholder)
@@ -355,8 +360,8 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
                 if textView.configuration.readingWidth != nil {
                     textView.centerReadingColumn(forClipWidth: newWidth)
                 }
-                context.coordinator.didEnsureLayoutForCurrentDocument = false
-                context.coordinator.updateCodeBlockSelection(textView: textView)
+                coordinator.didEnsureLayoutForCurrentDocument = false
+                coordinator.updateCodeBlockSelection(textView: textView)
             }
             // Only react with overscroll recalc when the viewport itself resizes
             // (window resize). Without this guard, TextKit-induced frame changes echo
@@ -383,58 +388,67 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         }
         NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: nil) { _ in
             textView.ensureVisibleLayout()
-            if context.coordinator.isWritingToolsActive {
-                context.coordinator.fixWritingToolsChildWindowIfNeeded(textView: textView)
+            if coordinator.isWritingToolsActive {
+                coordinator.fixWritingToolsChildWindowIfNeeded(textView: textView)
             }
             scrollView.clampToInsets()
-            context.coordinator.refreshActiveLinkCaretRect()
-            context.coordinator.updateCodeBlockSelection(textView: textView)
+            coordinator.refreshActiveLinkCaretRect()
+            coordinator.updateCodeBlockSelection(textView: textView)
         }
-        reconcileHeader(textView: textView, context: context)
+        reconcileHeader(textView: textView, coordinator: coordinator)
         return scrollView
     }
 
     public func updateNSView(_ nsView: NSScrollView, context: Context) {
+        updateAppKitView(nsView, coordinator: context.coordinator)
+    }
+
+    /// Applies a new document/configuration without replacing the native view.
+    public func updateAppKitView(_ nsView: NSScrollView, coordinator: Coordinator) {
+        coordinator.updateTextBinding($text)
         guard let textView = nsView.nativeTextView else {
             return
         }
-        reconcileHeader(textView: textView, context: context)
+        reconcileHeader(textView: textView, coordinator: coordinator)
 
-        let isNodeSwitch = context.coordinator.documentId != documentId
+        let isNodeSwitch = coordinator.documentId != documentId
+        let selectionBeforeUpdate = textView.selectedRange()
+        let scrollOriginBeforeUpdate = nsView.contentView.bounds.origin
+        let sourceUnchanged = coordinator.lastSyncedText == text
 
         // Refreshed here, not with the other callbacks at the bottom — teardown has
         // to reach the CURRENT closures even when the pass below returns early.
-        context.coordinator.onPersistScrollOffset = onPersistScrollOffset
-        context.coordinator.restoreScrollOffset = restoreScrollOffset
+        coordinator.onPersistScrollOffset = onPersistScrollOffset
+        coordinator.restoreScrollOffset = restoreScrollOffset
 
         // Drop remembered offsets for documents no longer retained (always keep
         // the current one). Only rebuilds the dict when something must go.
         if let retained = retainedScrollDocumentIds {
-            let needsPrune = context.coordinator.scrollOffsets.keys.contains { key in
+            let needsPrune = coordinator.scrollOffsets.keys.contains { key in
                 key != documentId && !retained.contains(key)
             }
             if needsPrune {
-                context.coordinator.scrollOffsets = context.coordinator.scrollOffsets.filter {
+                coordinator.scrollOffsets = coordinator.scrollOffsets.filter {
                     $0.key == documentId || retained.contains($0.key)
                 }
             }
             // Evict undo stacks + content snapshots for documents no longer
             // retained (keep the current one); clear actions before dropping.
-            let staleUndoKeys = Set(context.coordinator.undoManagers.keys)
-                .union(context.coordinator.undoContentSnapshots.keys)
+            let staleUndoKeys = Set(coordinator.undoManagers.keys)
+                .union(coordinator.undoContentSnapshots.keys)
                 .filter { key in
                     key != documentId && key != "__default__" && !retained.contains(key)
                 }
             for key in staleUndoKeys {
-                context.coordinator.undoManagers[key]?.removeAllActions()
-                context.coordinator.undoManagers.removeValue(forKey: key)
-                context.coordinator.undoContentSnapshots.removeValue(forKey: key)
+                coordinator.undoManagers[key]?.removeAllActions()
+                coordinator.undoManagers.removeValue(forKey: key)
+                coordinator.undoContentSnapshots.removeValue(forKey: key)
             }
         }
 
         let wtActive: Bool = {
             if #available(macOS 15.0, *), textView.isWritingToolsActive { return true }
-            return context.coordinator.isWritingToolsActive
+            return coordinator.isWritingToolsActive
         }()
 
         if wtActive && isNodeSwitch {
@@ -442,7 +456,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             // WT session so it doesn't overwrite the wrong node.
             // Keep wtStartDocumentId so textViewWritingToolsDidEnd can detect the
             // node mismatch and discard the results.
-            context.coordinator.isWritingToolsActive = false
+            coordinator.isWritingToolsActive = false
         } else if wtActive {
             // WT active on the same node — don't interfere with the session.
             // Note: this skips the heightBehavior sync below, so a heightBehavior
@@ -462,7 +476,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             clamped.fitsContent = configuration.heightBehavior == .fitsContent
         }
         textView.configuration.heightBehavior = configuration.heightBehavior
-        context.coordinator.configuration.heightBehavior = configuration.heightBehavior
+        coordinator.configuration.heightBehavior = configuration.heightBehavior
         let desiredVerticalScroller = configuration.heightBehavior.wantsVerticalScroller(for: configuration.scrollers)
         if nsView.hasVerticalScroller != desiredVerticalScroller {
             nsView.hasVerticalScroller = desiredVerticalScroller
@@ -483,16 +497,16 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         // Sync rawSourceMode; a flip rebuilds in the new presentation. It
         // changes display text ([[Name]] ↔ [[Name|UUID]]), so drop the doc's
         // undo stack — surviving actions would replay at stale ranges.
-        let rawSourceModeChanged = context.coordinator.configuration.rawSourceMode != configuration.rawSourceMode
+        let rawSourceModeChanged = coordinator.configuration.rawSourceMode != configuration.rawSourceMode
         if rawSourceModeChanged {
-            context.coordinator.configuration.rawSourceMode = configuration.rawSourceMode
+            coordinator.configuration.rawSourceMode = configuration.rawSourceMode
             textView.configuration.rawSourceMode = configuration.rawSourceMode
             textView.breakUndoCoalescing()
-            context.coordinator.undoManagers[documentId]?.removeAllActions()
-            context.coordinator.didInitialFormatting = false
+            coordinator.undoManagers[documentId]?.removeAllActions()
+            coordinator.didInitialFormatting = false
             // isWikiLinkActive is a SwiftUI binding — defer off the update pass
             // to avoid "Modifying state during view update".
-            let coordinator = context.coordinator
+            let coordinator = coordinator
             DispatchQueue.main.async { coordinator.isWikiLinkActive = false }
         }
         // Sync the input-behavior toggles (auto-close pairs, list helpers).
@@ -501,7 +515,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         // until the editor was rebuilt. Plain assignment: a tiny value struct,
         // and no rebuild is needed for it to take effect.
         textView.configuration.lists = configuration.lists
-        context.coordinator.configuration.lists = configuration.lists
+        coordinator.configuration.lists = configuration.lists
         // Sync registered extensions (inline spans + fenced blocks) and directives. A change alters
         // the GRAMMAR (tokens differ under the new registry), so the coordinator's parsed
         // cache must drop before the restyle — the parse-layer memos invalidate
@@ -511,17 +525,17 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         // which means the directive list has to be copied here as well, or the restyle it triggers
         // runs against the old one.
         let newExtensionFingerprint = configuration.extensionRegistry.fingerprint
-        if newExtensionFingerprint != context.coordinator.configuration.extensionRegistry.fingerprint {
-            context.coordinator.configuration.extensions = configuration.extensions
+        if newExtensionFingerprint != coordinator.configuration.extensionRegistry.fingerprint {
+            coordinator.configuration.extensions = configuration.extensions
             textView.configuration.extensions = configuration.extensions
-            context.coordinator.configuration.directives = configuration.directives
+            coordinator.configuration.directives = configuration.directives
             textView.configuration.directives = configuration.directives
-            context.coordinator.configuration.directiveSettings = configuration.directiveSettings
+            coordinator.configuration.directiveSettings = configuration.directiveSettings
             textView.configuration.directiveSettings = configuration.directiveSettings
-            context.coordinator.cachedParsedDocument = nil
+            coordinator.cachedParsedDocument = nil
             let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
             if fullRange.length > 0 {
-                context.coordinator.restyleParagraphs([fullRange], in: textView)
+                coordinator.restyleParagraphs([fullRange], in: textView)
             }
         }
         // Reading column centers by POSITION (container subview), so the text inset is constant.
@@ -539,12 +553,12 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         // embedder is the source of truth.
         let newImageFingerprint = configuration.services.images.fingerprint()
         let newWikiFingerprint = configuration.services.wikiLinks.fingerprint()
-        let imageChanged = newImageFingerprint != context.coordinator.lastImageFingerprint
-        let wikiChanged = newWikiFingerprint != context.coordinator.lastWikiFingerprint
+        let imageChanged = newImageFingerprint != coordinator.lastImageFingerprint
+        let wikiChanged = newWikiFingerprint != coordinator.lastWikiFingerprint
         if imageChanged || wikiChanged {
-            context.coordinator.lastImageFingerprint = newImageFingerprint
-            context.coordinator.lastWikiFingerprint = newWikiFingerprint
-            context.coordinator.configuration.services = configuration.services
+            coordinator.lastImageFingerprint = newImageFingerprint
+            coordinator.lastWikiFingerprint = newWikiFingerprint
+            coordinator.configuration.services = configuration.services
             textView.configuration.services = configuration.services
             // Only an image change needs a layout re-measure; a wiki-link rename is style-only.
             if imageChanged, let tlm = textView.textLayoutManager {
@@ -553,21 +567,35 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             // Restyle live tv content — full rebuild would clobber paste-fresh embeds when `text` binding hasn't caught up.
             let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
             if fullRange.length > 0 {
-                context.coordinator.restyleParagraphs([fullRange], in: textView)
+                coordinator.restyleParagraphs([fullRange], in: textView)
             }
         }
+        let presentationChanged = coordinator.presentationIsEditable != isEditable
+            || coordinator.configuration.showsMarkdownMarkersWhileEditing != configuration.showsMarkdownMarkersWhileEditing
+        coordinator.configuration.showsMarkdownMarkersWhileEditing = configuration.showsMarkdownMarkersWhileEditing
+        textView.configuration.showsMarkdownMarkersWhileEditing = configuration.showsMarkdownMarkersWhileEditing
+        coordinator.presentationIsEditable = isEditable
+        if presentationChanged { coordinator.didInitialFormatting = false }
+        let typographyChanged = coordinator.configuration.headings.fontMultipliers != configuration.headings.fontMultipliers
+            || coordinator.configuration.headings.topSpacingEm != configuration.headings.topSpacingEm
+            || coordinator.configuration.codeBlock.fontSizeScale != configuration.codeBlock.fontSizeScale
+        coordinator.configuration.headings = configuration.headings
+        textView.configuration.headings = configuration.headings
+        coordinator.configuration.codeBlock = configuration.codeBlock
+        textView.configuration.codeBlock = configuration.codeBlock
+        if typographyChanged { coordinator.didInitialFormatting = false }
         textView.isEditable = isEditable
         textView.isSelectable = true
         // Keep the caret ink the selection handler resolved (an extension span
         // can invert it); a plain bodyText reset here stomps it on every pass.
         textView.insertionPointColor = isEditable
-            ? (context.coordinator.resolvedCaretColor ?? context.coordinator.configuration.theme.bodyText)
+            ? (coordinator.resolvedCaretColor ?? coordinator.configuration.theme.bodyText)
             : .clear
-        let fontChanged = (context.coordinator.fontName != fontName) || (context.coordinator.fontSize != fontSize)
+        let fontChanged = (coordinator.fontName != fontName) || (coordinator.fontSize != fontSize)
         if let pendingInlineReplacement {
             if pendingInlineReplacement.documentId == documentId,
-               context.coordinator.lastAppliedInlineReplacementID != pendingInlineReplacement.id {
-                context.coordinator.applyInlineReplacement(pendingInlineReplacement, to: textView)
+               coordinator.lastAppliedInlineReplacementID != pendingInlineReplacement.id {
+                coordinator.applyInlineReplacement(pendingInlineReplacement, to: textView)
             }
             DispatchQueue.main.async {
                 if self.pendingInlineReplacement?.id == pendingInlineReplacement.id {
@@ -576,21 +604,21 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             }
             return
         }
-        if context.coordinator.didInitialFormatting
-            && context.coordinator.lastSyncedText == text
+        if !isNodeSwitch && coordinator.didInitialFormatting
+            && coordinator.lastSyncedText == text
             && !fontChanged {
             return
         }
         if fontChanged {
-            context.coordinator.didInitialFormatting = false
+            coordinator.didInitialFormatting = false
         }
         if isNodeSwitch {
             // Save the outgoing document's scroll position — unless it just left
             // the retained set, in which case let it reset to top next time.
-            if let outgoingId = context.coordinator.documentId {
+            if let outgoingId = coordinator.documentId {
                 let offsetY = nsView.contentView.bounds.origin.y
                 if retainedScrollDocumentIds?.contains(outgoingId) ?? true {
-                    context.coordinator.scrollOffsets[outgoingId] = offsetY
+                    coordinator.scrollOffsets[outgoingId] = offsetY
                 }
                 // The embedder's store applies its own retention — it is asked live,
                 // so it can see what the snapshot above was taken too early to know.
@@ -599,8 +627,8 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             // Snapshot the outgoing document's content (storage form) so a later
             // switch-back can detect a file rewritten while it was backgrounded.
             // `lastSyncedText` still holds the outgoing content here.
-            if let outgoingId = context.coordinator.documentId {
-                context.coordinator.undoContentSnapshots[outgoingId] = context.coordinator.lastSyncedText
+            if let outgoingId = coordinator.documentId {
+                coordinator.undoContentSnapshots[outgoingId] = coordinator.lastSyncedText
             }
             // Per-document undo: close the OUTGOING document's open coalescing group
             // (while its manager is still active), then switch the active documentId so
@@ -608,14 +636,14 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             // no longer clear undo here — that `removeAllActions()` is what killed Cmd+Z
             // across a file switch.
             textView.breakUndoCoalescing()
-            context.coordinator.documentId = documentId
-            context.coordinator.armScrollRestore(for: documentId)
+            coordinator.documentId = documentId
+            coordinator.armScrollRestore(for: documentId)
             // Drop the incoming document's undo stack if its text changed while
             // switched away — its recorded ranges are now stale.
-            context.coordinator.invalidateUndoIfContentDiverged(for: documentId, incomingText: text)
-            context.coordinator.didInitialFormatting = false
-            context.coordinator.didEnsureLayoutForCurrentDocument = false
-            context.coordinator.resetImageEmbedState()
+            coordinator.invalidateUndoIfContentDiverged(for: documentId, incomingText: text)
+            coordinator.didInitialFormatting = false
+            coordinator.didEnsureLayoutForCurrentDocument = false
+            coordinator.resetImageEmbedState()
             // Drop old document's wide-table overlays synchronously.
             textView.removeAllWideTableOverlays()
             // Park at top during the rebuild; the new document's own saved offset
@@ -640,22 +668,28 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
 
         // Sync coordinator's font fields BEFORE the rebuild so the helper
         // reads the current values from the View struct.
-        context.coordinator.fontName = fontName
-        context.coordinator.fontSize = fontSize
-        context.coordinator.rebuildTextStorageAndStyle(
+        coordinator.fontName = fontName
+        coordinator.fontSize = fontSize
+        coordinator.rebuildTextStorageAndStyle(
             textView,
             from: text,
             invalidateLayout: isNodeSwitch || rawSourceModeChanged
         )
+        if !isNodeSwitch, sourceUnchanged, presentationChanged || typographyChanged || fontChanged {
+            let length = (textView.string as NSString).length
+            let start = min(selectionBeforeUpdate.location, length)
+            textView.setSelectedRange(NSRange(location: start, length: min(selectionBeforeUpdate.length, length - start)))
+            nsView.contentView.scroll(to: scrollOriginBeforeUpdate)
+        }
         textView.recalcOverscroll(for: nsView)
         (nsView as? ClampedScrollView)?.clampToInsets()
         // Height is measured now, so restore the saved offset; clampToInsets keeps
         // it in range if the document got shorter. Latched rather than gated on
         // `isNodeSwitch`, because a remount is not a switch and its first pass still
         // carries the embedder's empty buffer — the clamp would pull it back to top.
-        if context.coordinator.pendingScrollRestoreDocumentId == documentId {
-            context.coordinator.pendingScrollRestoreAttempts -= 1
-            let saved = restoreScrollOffset?(documentId) ?? context.coordinator.scrollOffsets[documentId]
+        if coordinator.pendingScrollRestoreDocumentId == documentId {
+            coordinator.pendingScrollRestoreAttempts -= 1
+            let saved = restoreScrollOffset?(documentId) ?? coordinator.scrollOffsets[documentId]
             if let savedY = saved {
                 nsView.contentView.scroll(to: NSPoint(x: nsView.contentView.bounds.origin.x, y: savedY))
                 nsView.reflectScrolledClipView(nsView.contentView)
@@ -682,27 +716,27 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
                     // coming (measured: two passes, both viewportH=0, then nothing, with
                     // the latch left armed forever and teardown refusing to save).
                     (nsView as? ClampedScrollView)?.armScrollRestore(to: savedY)
-                    context.coordinator.pendingScrollRestoreDocumentId = nil
-                } else if landed || !text.isEmpty || context.coordinator.pendingScrollRestoreAttempts <= 0 {
-                    context.coordinator.pendingScrollRestoreDocumentId = nil
+                    coordinator.pendingScrollRestoreDocumentId = nil
+                } else if landed || !text.isEmpty || coordinator.pendingScrollRestoreAttempts <= 0 {
+                    coordinator.pendingScrollRestoreDocumentId = nil
                 }
             } else {
-                context.coordinator.pendingScrollRestoreDocumentId = nil
+                coordinator.pendingScrollRestoreDocumentId = nil
             }
         }
         // Document rebuilds bypass textDidChange — re-derive emptiness here.
         textView.refreshPlaceholderVisibility()
         DispatchQueue.main.async {
-            context.coordinator.updateCodeBlockSelection(textView: textView)
+            coordinator.updateCodeBlockSelection(textView: textView)
         }
 
-        context.coordinator.onCaretRectChange = onCaretRectChange
-        context.coordinator.onTextMutation = onTextMutation
-        context.coordinator.onBuildContextMenu = onBuildContextMenu
-        context.coordinator.onInlineSelectionChange = onInlineSelectionChange
-        context.coordinator.onInlinePreviewKey = onInlinePreviewKey
-        context.coordinator.onCodeBlockSelectionChange = onCodeBlockSelectionChange
-        context.coordinator.didInitialFormatting = true
+        coordinator.onCaretRectChange = onCaretRectChange
+        coordinator.onTextMutation = onTextMutation
+        coordinator.onBuildContextMenu = onBuildContextMenu
+        coordinator.onInlineSelectionChange = onInlineSelectionChange
+        coordinator.onInlinePreviewKey = onInlinePreviewKey
+        coordinator.onCodeBlockSelectionChange = onCodeBlockSelectionChange
+        coordinator.didInitialFormatting = true
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -759,8 +793,8 @@ private extension NativeTextViewWrapper {
     /// internal scrolling), so the collapse never triggers. Combining a
     /// collapsing header with `.fitsContent` is allowed but the collapse
     /// behavior is not meaningful.
-    func reconcileHeader(textView: NSTextView, context: Context) {
-        let coord = context.coordinator
+    func reconcileHeader(textView: NSTextView, coordinator: Coordinator) {
+        let coord = coordinator
         guard let container = (textView as? NativeTextView)?.superview as? NativeTextViewContainer else { return }
 
         guard let header else {
