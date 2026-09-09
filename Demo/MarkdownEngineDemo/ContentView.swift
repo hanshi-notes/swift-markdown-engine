@@ -12,12 +12,6 @@ import MarkdownEngine
 // `#if` blocks (or remove the matching Swift Package product dependency
 // from the Xcode project) and the demo still compiles. Code blocks fall
 // back to plain monospace; LaTeX falls back to its raw `$…$` source.
-#if canImport(MarkdownEngineCodeBlocks)
-import MarkdownEngineCodeBlocks
-#endif
-#if canImport(MarkdownEngineLatex)
-import MarkdownEngineLatex
-#endif
 
 struct ContentView: View {
     @State private var text: String = sampleMarkdown
@@ -134,28 +128,13 @@ struct ContentView: View {
     }
 
     /// The engine talks to your app through service protocols. Two of them —
-    /// `SyntaxHighlighter` and `LatexRenderer` — render the code-block and
-    /// LaTeX visuals. The base `MarkdownEngine` ships no-op defaults
-    /// (plain monospace, raw `$…$`); the optional `MarkdownEngineCodeBlocks`
-    /// and `MarkdownEngineLatex` products ship ready-made bridges backed by
-    /// HighlighterSwift and SwiftMath respectively.
-    ///
-    /// This demo opportunistically plugs in whichever bridges are linked,
-    /// so you can see exactly what each one adds.
+    /// `SyntaxHighlighter` and `LatexRenderer` — own the code-block and LaTeX
+    /// visuals, and the engine ships only no-op defaults: plain monospace and
+    /// raw `$…$`. There are no bundled bridges, so this demo shows those
+    /// fallbacks. The markdown is parsed either way, which is the whole point
+    /// of Part 2.
     private var configuration: MarkdownEditorConfiguration {
         var config = MarkdownEditorConfiguration.default
-
-        #if canImport(MarkdownEngineCodeBlocks)
-        // Syntax highlighting for fenced code blocks. Auto-switches between
-        // `atom-one-light` and `atom-one-dark` with system appearance.
-        config.services.syntaxHighlighter = HighlighterSwiftBridge()
-        #endif
-
-        #if canImport(MarkdownEngineLatex)
-        // LaTeX rendering for `$inline$` and `$$block$$` math. Uses the
-        // Latin Modern math font and tints formulas to match the theme.
-        config.services.latex = SwiftMathBridge()
-        #endif
 
         // ── The two opt-in seams (Part 3 of the document) ───────────────────
         // Neither is core markdown. Both are registered here and nowhere else,
@@ -186,11 +165,11 @@ struct ContentView: View {
 /// question a reader of this demo actually has:
 ///
 ///   Part 1  core markdown — link `MarkdownEngine`, done
-///   Part 2  optional products — one extra SPM dependency each, visuals only
+///   Part 2  embedder-supplied visuals — service protocols, visuals only
 ///   Part 3  opt-in seams — registered in `MarkdownEditorConfiguration`
 ///
-/// Part 2's sections swap to a short "not linked" note when the bridge product
-/// is missing; Part 3's sections turn into literal text when the "Opt-in seams"
+/// Part 2's sections show the engine's no-op fallbacks, since this demo supplies
+/// no services; Part 3's sections turn into literal text when the "Opt-in seams"
 /// toolbar toggle is off. Those two fallbacks are the demo's whole argument:
 /// everything in Part 1 is unaffected by either.
 private var sampleMarkdown: String {
@@ -226,12 +205,12 @@ toggle below changes a single character of this part.
 private let optionalPartHeader = """
 ---
 
-# Part 2 · Optional products
+# Part 2 · Embedder-supplied visuals
 
-Two visuals live behind separate Swift Package products because they pull in \
-third-party dependencies: `MarkdownEngineCodeBlocks` (HighlighterSwift) and \
-`MarkdownEngineLatex` (SwiftMath). Note what they are and aren't — the markdown \
-is PARSED either way; without the product you get the fallback visual, not \
+Two visuals come from service protocols the embedder conforms to, \
+`SyntaxHighlighter` and `LatexRenderer`. This demo supplies neither, so both \
+show the engine's fallback. Note what that is and isn't — the markdown is \
+PARSED either way; without the service you get the fallback visual, not \
 literal text. That is what separates Part 2 from Part 3.
 """
 
@@ -373,57 +352,39 @@ private let inlineFormattingSection = """
 Mix **bold**, *italic*, and ***both at once***. Reach for `inline code` when a short snippet helps.
 """
 
-/// Math demo when the `MarkdownEngineLatex` bridge is linked; otherwise a short
-/// note pointing to the README section that explains how to enable it.
-///
-/// The `$…$` syntax is CORE — the parser claims it either way. Only the visual
-/// comes from the product, which is exactly the Part 2 / Part 3 distinction.
+/// Math demo. The `$…$` syntax is CORE — the parser claims it either way. Only
+/// the visual comes from a `LatexRenderer`, and this demo supplies none, which
+/// is exactly the Part 2 / Part 3 distinction.
 private var mathSection: String {
-    #if canImport(MarkdownEngineLatex)
-    return #"""
-    ## Math — `MarkdownEngineLatex`
-
-    Inline math fits naturally in prose — the Pythagorean identity says $a^2 + b^2 = c^2$, and Euler's identity famously claims $e^{i\pi} + 1 = 0$. Block math gets its own centered line:
-
-    $$
-    \int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}
-    $$
-
-    $$
-    \frac{\partial}{\partial t}\Psi(\mathbf{r}, t) = -\frac{i}{\hbar}\hat{H}\,\Psi(\mathbf{r}, t)
-    $$
-    """#
-    #else
     return """
-    ## Math — `MarkdownEngineLatex` not linked
+    ## Math
 
-    `$inline$` and `$$block$$` math is still parsed and still claims its span — it just renders as its own source without the optional `MarkdownEngineLatex` product. See [LaTeX Rendering](https://github.com/nodes-app/swift-markdown-engine#latex-rendering) in the README to wire it up.
+    `$inline$` and `$$block$$` math is parsed and claims its span; it renders as
+    its own source until you conform to `LatexRenderer`. See [LaTeX Rendering](https://github.com/nodes-app/swift-markdown-engine#latex-rendering)
+    in the README.
+
+    The Pythagorean identity says $a^2 + b^2 = c^2$, and a block formula gets its
+    own line:
+
+    $$
+    \\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}
+    $$
     """
-    #endif
 }
 
-/// Fenced code-block demo when the `MarkdownEngineCodeBlocks` bridge is
-/// linked; otherwise a plain monospace example and a link to the
-/// README's Code Blocks section.
+/// Fenced code-block demo. The engine parses and blocks the fence either way;
+/// colors come from whatever `SyntaxHighlighter` the embedder supplies, and this
+/// demo supplies none, so the sample renders as plain monospace.
 private var codeSection: String {
-    #if canImport(MarkdownEngineCodeBlocks)
     return #"""
-    ## Code — `MarkdownEngineCodeBlocks`
+    ## Code
 
-    Swift, with syntax highlighting:
+    Fenced code blocks are parsed and get their own block, rendered as plain
+    monospace until you conform to `SyntaxHighlighter`. See [Code Blocks](https://github.com/nodes-app/swift-markdown-engine#code-blocks)
+    in the README.
 
     ```swift
-    import SwiftUI
-    import MarkdownEngine
-
-    struct Editor: View {
-        @State private var text = "# Hello"
-
-        var body: some View {
-            NativeTextViewWrapper(text: $text)
-                .frame(minWidth: 640, minHeight: 480)
-        }
-    }
+    let greeting = "Hello, world!"
     ```
 
     And a little JSON:
@@ -436,17 +397,6 @@ private var codeSection: String {
     }
     ```
     """#
-    #else
-    return #"""
-    ## Code — `MarkdownEngineCodeBlocks` not linked
-
-    Fenced code blocks are still parsed and still get their own block — they just render as plain monospace without the optional `MarkdownEngineCodeBlocks` product. See [Code Blocks](https://github.com/nodes-app/swift-markdown-engine#code-blocks) in the README for syntax-highlighted output:
-
-    ```swift
-    let greeting = "Hello, world!"
-    ```
-    """#
-    #endif
 }
 
 private let markdownFooter = """

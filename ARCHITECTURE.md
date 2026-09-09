@@ -4,27 +4,23 @@
 
 ```bash
 Sources/
-├── MarkdownEngine/                          # core target — zero deps
-│   ├── Configuration/                       # MarkdownEditorConfiguration + MarkdownEditorTheme
-│   ├── Extensions/                          # the extension seam: MarkdownExtension + bundled opt-ins
-│   ├── Directives/                          # the directive seam: @font(size: 18){…} — parsing + registry
-│   ├── Services/                            # 4 protocols, no-op defaults, WikiLinkService
-│   ├── Parser/                              # two-phase AST: BlockParser → InlineParser → DocumentAST (+ token projection)
-│   ├── Styling/                             # MarkdownASTStyler (AST walk) + MarkdownStyler facade for NSImage passes
-│   ├── Renderer/                            # LayoutBridge, MarkdownTextLayoutFragment, EmbeddedImageCache
-│   ├── Input/                               # MarkdownInputHandler + MarkdownListHandler
-│   ├── TextView/
-│   │   ├── NativeTextViewWrapper.swift      # SwiftUI entry point (NSViewRepresentable)
-│   │   ├── NativeTextViewContainer.swift    # the scroll view's documentView: header band + text column stacking
-│   │   ├── ScrollingHeaderController.swift  # scroll-away header: hosting, collapse/expand, teardown
-│   │   ├── ClampedScrollView.swift          # scroll range clamped to real content height
-│   │   ├── NativeTextView/                  # AppKit subclass + UX extensions (paste, drag-select, …)
-│   │   └── Coordinator/                     # NSTextViewDelegate split by concern (restyling, find, …)
-│   └── MarkdownEngine.docc/                 # DocC catalog
-├── MarkdownEngineCodeBlocks/                # opt-in SPM product — pulls in HighlighterSwift
-│   └── HighlighterSwiftBridge.swift         # SyntaxHighlighter conformance
-└── MarkdownEngineLatex/                     # opt-in SPM product — pulls in SwiftMath
-    └── SwiftMathBridge.swift                # LatexRenderer conformance
+└── MarkdownEngine/                          # core target — zero deps
+    ├── Configuration/                       # MarkdownEditorConfiguration + MarkdownEditorTheme
+    ├── Extensions/                          # the extension seam: MarkdownExtension + bundled opt-ins
+    ├── Directives/                          # the directive seam: @font(size: 18){…} — parsing + registry
+    ├── Services/                            # 4 protocols, no-op defaults, WikiLinkService
+    ├── Parser/                              # two-phase AST: BlockParser → InlineParser → DocumentAST (+ token projection)
+    ├── Styling/                             # MarkdownASTStyler (AST walk) + MarkdownStyler facade for NSImage passes
+    ├── Renderer/                            # LayoutBridge, MarkdownTextLayoutFragment, EmbeddedImageCache
+    ├── Input/                               # MarkdownInputHandler + MarkdownListHandler
+    ├── TextView/
+    │   ├── NativeTextViewWrapper.swift      # SwiftUI entry point (NSViewRepresentable)
+    │   ├── NativeTextViewContainer.swift    # the scroll view's documentView: header band + text column stacking
+    │   ├── ScrollingHeaderController.swift  # scroll-away header: hosting, collapse/expand, teardown
+    │   ├── ClampedScrollView.swift          # scroll range clamped to real content height
+    │   ├── NativeTextView/                  # AppKit subclass + UX extensions (paste, drag-select, …)
+    │   └── Coordinator/                     # NSTextViewDelegate split by concern (restyling, find, …)
+    └── MarkdownEngine.docc/                 # DocC catalog
 ```
 
 The rest of this file is a per-directory tour, in the order text flows

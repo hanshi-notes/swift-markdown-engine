@@ -19,6 +19,8 @@ extension MarkdownTokenizer {
     private static var blockTokenCache: [String: [MarkdownToken]] = [:]
     private static var blockTokenOrder: [String] = []
     private static let blockTokenCacheCap = 4096
+    /// Blocks above this size skip the memo entirely — see ``cachedBlockTokens``.
+    private static let uncachedBlockSize = 4096
 
     // Document-level token memo: re-tokenize only the touched blocks; the rest shift by the delta.
     private static let tokensLock = NSLock()
@@ -155,6 +157,16 @@ extension MarkdownTokenizer {
     /// the token logic. The key carries the registry fingerprint — the same text
     /// tokenizes differently under a different extension set.
     static func cachedBlockTokens(kind: BlockKind, sub: String, registry: ExtensionRegistry = .empty) -> [MarkdownToken] {
+        // The key IS the block text, so a large block copies and hashes every character
+        // for a lookup that cannot hit while the reader types inside it: each keystroke
+        // changes the key. Measured on a 208k-character fence, skipping the memo took the
+        // per-keystroke cost from 151ms to 95ms. Small blocks keep it — that is where
+        // identical blocks actually repeat, and where the key is cheap.
+        // ponytail: flat size cut-off. The next third is `ns.substring(with:)` at the call
+        // sites, which needs the block tokenizers to take (NSString, range) instead.
+        guard sub.utf16.count <= uncachedBlockSize else {
+            return blockTokens(kind: kind, sub: sub, registry: registry)
+        }
         let key = registry.fingerprint.isEmpty ? sub : registry.fingerprint + "\u{1F}" + sub
         blockTokenLock.lock()
         if let cached = blockTokenCache[key] {
@@ -163,6 +175,22 @@ extension MarkdownTokenizer {
         }
         blockTokenLock.unlock()
 
+        let computed = blockTokens(kind: kind, sub: sub, registry: registry)
+
+        blockTokenLock.lock()
+        if blockTokenCache[key] == nil {
+            blockTokenCache[key] = computed
+            blockTokenOrder.append(key)
+            if blockTokenOrder.count > blockTokenCacheCap {
+                blockTokenCache[blockTokenOrder.removeFirst()] = nil
+            }
+        }
+        blockTokenLock.unlock()
+        return computed
+    }
+
+    /// The memoized logic itself, so the cached and uncached paths cannot drift.
+    private static func blockTokens(kind: BlockKind, sub: String, registry: ExtensionRegistry) -> [MarkdownToken] {
         let blockLevel = BlockLevelTokenizer.tokens(for: kind, in: sub as NSString, registry: registry)
         // Fenced code is opaque — no inline markup inside it. Extension blocks
         // parse inlines over their CONTENT only (the fence lines are syntax —
@@ -179,18 +207,7 @@ extension MarkdownTokenizer {
         } else {
             inline = InlineASTAdapter.tokens(from: InlineParser.parse(sub, registry: registry))
         }
-        let computed = blockLevel + inline
-
-        blockTokenLock.lock()
-        if blockTokenCache[key] == nil {
-            blockTokenCache[key] = computed
-            blockTokenOrder.append(key)
-            if blockTokenOrder.count > blockTokenCacheCap {
-                blockTokenCache[blockTokenOrder.removeFirst()] = nil
-            }
-        }
-        blockTokenLock.unlock()
-        return computed
+        return blockLevel + inline
     }
 }
 

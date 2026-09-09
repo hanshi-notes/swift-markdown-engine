@@ -144,6 +144,35 @@ struct ParseIncrementalEquivalenceTests {
         }
     }
 
+    /// A block past the token memo's size cut-off takes the uncached path in
+    /// `cachedBlockTokens`. The corpus above is 40 lines, so nothing in it crosses
+    /// that size and the uncached path would otherwise go untested.
+    @Test func blockBeyondTheMemoCutOffMatchesFullParse() {
+        var rng = Rng(state: 0xB16B10C)
+        let state = DocumentParseState()
+        let body = String(repeating: "let value = compute(input: index, scale: 2.0)\n", count: 200)
+        var text = "# Heading\n\nSome **prose** first.\n\n```swift\n" + body + "```\n\nTrailing *prose*.\n"
+        #expect((text as NSString).length > 4096, "the fence must exceed the cut-off or this tests nothing")
+        _ = state.tokens(for: text, edit: nil)
+
+        for step in 0..<80 {
+            let ns = NSMutableString(string: text)
+            let loc = rng.int(ns.length + 1)
+            let removeLen = min(rng.int(4), ns.length - loc)
+            let insert = rng.int(4) == 0 ? "" : rng.pick(Self.editSnippets)
+            ns.replaceCharacters(in: NSRange(location: loc, length: removeLen), with: insert)
+            text = ns as String
+            let edit = ParseEditDescriptor(
+                editedRange: NSRange(location: loc, length: (insert as NSString).length),
+                delta: (insert as NSString).length - removeLen
+            )
+            let incremental = dump(state.tokens(for: text, edit: edit))
+            let full = groundTruth(text)
+            #expect(incremental == full, "step \(step): tokens diverged at \(loc)")
+            if incremental != full { return }
+        }
+    }
+
     @Test func windowCensusFuzz() {
         var rng = Rng(state: 0xFACE)
         let alphabet = ["`", "a", "\n", "``", "b`"]
