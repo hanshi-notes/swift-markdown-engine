@@ -142,6 +142,7 @@ struct MarkdownLists {
 
         // Autocomplete Obsidian-style node brackets and single square brackets
         if replacementString == "[" {
+            guard autoClosePairsEnabled else { return true }
             let nsText = textView.string as NSString
             let insertionLocation = affectedCharRange.location
             if insertionLocation > 0 {
@@ -164,7 +165,6 @@ struct MarkdownLists {
                     return false
                 }
             }
-            guard autoClosePairsEnabled else { return true }
             return insertAutoPair(open: "[", close: "]")
         }
 

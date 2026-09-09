@@ -60,3 +60,15 @@ struct ListHandlerCodeContextTests {
         #expect(tv.string == "```\n- hello\n\n```")
     }
 }
+
+extension ListHandlerCodeContextTests {
+    @Test(arguments: ["[", "(", "{"]) func disabledPairCompletionAlsoLeavesRepeatedOpenersLiteral(_ opening: String) {
+        let view = makeEditor(text: opening)
+        view.configuration.lists.autoClosePairsEnabled = false
+        let range = NSRange(location: 1, length: 0)
+        view.setSelectedRange(range)
+        #expect(MarkdownLists.handleInsertion(textView: view, affectedCharRange: range,
+            replacementString: opening))
+        #expect(view.string == opening)
+    }
+}
