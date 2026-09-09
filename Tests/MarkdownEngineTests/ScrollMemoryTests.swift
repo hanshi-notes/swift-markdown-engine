@@ -12,6 +12,7 @@
 import AppKit
 import SwiftUI
 import Testing
+import XCTest
 @testable import MarkdownEngine
 
 @MainActor
@@ -43,6 +44,73 @@ private func makeScrollView(scrolledTo offsetY: CGFloat) -> NSScrollView {
 @Suite("Embedder scroll memory")
 @MainActor
 struct ScrollMemoryTests {
+
+    @Test(arguments: ["normal", "noDocument", "pendingRestore", "appKitRelease"])
+    func releasingEditorDoesNotLeaveViewsOrCoordinatorRetained(teardown: String) async {
+        _ = NSApplication.shared
+        weak var releasedScroll: NSScrollView?
+        weak var releasedText: NSTextView?
+        weak var releasedCoordinator: NativeTextViewCoordinator?
+        autoreleasepool {
+            var configuration = MarkdownEditorConfiguration.default
+            // Keep system spell-checking jobs out of this ownership test.
+            configuration.spellChecking = SpellCheckingPolicy(continuousSpellChecking: false,
+                grammarChecking: false, automaticSpellingCorrection: false)
+            let wrapper = NativeTextViewWrapper(text: .constant("A short note"), configuration: configuration)
+            let coordinator = wrapper.makeCoordinator()
+            let scroll = wrapper.makeAppKitView(coordinator: coordinator)
+            releasedScroll = scroll
+            releasedText = coordinator.textView
+            releasedCoordinator = coordinator
+            let hasTextView = coordinator.textView != nil
+            #expect(hasTextView)
+            if teardown != "pendingRestore" { coordinator.pendingScrollRestoreDocumentId = nil }
+            if teardown == "noDocument" { coordinator.documentId = nil }
+            if teardown != "appKitRelease" {
+                NativeTextViewWrapper.dismantleNSView(scroll, coordinator: coordinator)
+            }
+        }
+        // AppKit can retain the text view until its deferred work finishes.
+        let released = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in releasedText == nil }, object: nil)
+        let result = await XCTWaiter.fulfillment(of: [released], timeout: 5)
+        #expect(result == .completed)
+        #expect(releasedScroll == nil)
+        #expect(releasedText == nil)
+        #expect(releasedCoordinator == nil)
+    }
+
+    @Test(arguments: ["normal", "noDocument", "pendingRestore"])
+    func dismantleStopsViewportCallbacks(teardown: String) {
+        let wrapper = NativeTextViewWrapper(text: .constant("A short note"))
+        let coordinator = wrapper.makeCoordinator()
+        let scroll = wrapper.makeAppKitView(coordinator: coordinator)
+        scroll.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+        scroll.tile()
+        let clip = scroll.contentView
+        clip.postsFrameChangedNotifications = false
+        clip.postsBoundsChangedNotifications = false
+        var callbacks = 0
+        coordinator.onCodeBlockSelectionChange = { _ in callbacks += 1 }
+        let names = [NSView.frameDidChangeNotification, NSView.boundsDidChangeNotification]
+        for name in names {
+            let before = callbacks
+            scroll.frame.size.width += 100
+            scroll.tile()
+            NotificationCenter.default.post(name: name, object: clip)
+            #expect(callbacks > before, "Mounted editors must still receive viewport updates")
+        }
+        if teardown != "pendingRestore" { coordinator.pendingScrollRestoreDocumentId = nil }
+        if teardown == "noDocument" { coordinator.documentId = nil }
+        NativeTextViewWrapper.dismantleNSView(scroll, coordinator: coordinator)
+        NativeTextViewWrapper.dismantleNSView(scroll, coordinator: coordinator)
+        let before = callbacks
+        for name in names {
+            scroll.frame.size.width += 100
+            scroll.tile()
+            NotificationCenter.default.post(name: name, object: clip)
+        }
+        #expect(callbacks == before, "Dismantled editors must no longer receive viewport updates")
+    }
 
     @Test("Teardown hands the current offset to the embedder")
     func dismantlePersistsOffset() {

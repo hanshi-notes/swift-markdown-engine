@@ -124,8 +124,7 @@ final class ClampedScrollView: NSScrollView {
         // self-limiting (only at the bottom) and still clamps to the real content height.
         if let textView = container?.textView,
            b.origin.y > realHeight - b.height {
-            textView.pendingFullLayoutMeasure = true
-            textView.recalcOverscroll(for: self)
+            textView.recalcOverscroll(for: self, forceFullMeasure: true)
             realHeight = container?.scrollableContentHeight ?? doc.bounds.height
         }
 

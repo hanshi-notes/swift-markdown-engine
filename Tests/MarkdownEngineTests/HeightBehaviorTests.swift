@@ -163,7 +163,7 @@ struct FitsContentOverscrollTests {
         // short-circuiting the measurement.
         let stack = HeightBehaviorStack(heightBehavior: .fitsContent)
         stack.textView.baseContentHeight = 0
-        stack.textView.recalcOverscroll(for: stack.scrollView)
+        stack.textView.recalcOverscroll(for: stack.scrollView, forceFullMeasure: true)
 
         // baseContentHeight must be set to the measured value (> 0 for even
         // an empty document in TextKit-2, which returns at least one line).
@@ -255,7 +255,7 @@ struct RuntimeHeightBehaviorSwitchTests {
         newConfig.heightBehavior = .scrolls
         stack.textView.configuration = newConfig
         stack.scrollView.fitsContent = false
-        stack.textView.recalcOverscroll(for: stack.scrollView)
+        stack.textView.recalcOverscroll(for: stack.scrollView, forceFullMeasure: true)
 
         // Inflation restored: text view fills the viewport.
         #expect(stack.textView.frame.height == 800)
@@ -309,7 +309,7 @@ struct RuntimeHeightBehaviorSwitchTests {
         newConfig.heightBehavior = .fitsContent
         stack.textView.configuration = newConfig
         stack.scrollView.fitsContent = true
-        stack.textView.recalcOverscroll(for: stack.scrollView)
+        stack.textView.recalcOverscroll(for: stack.scrollView, forceFullMeasure: true)
 
         // Now intrinsicContentSize should report actual height.
         #expect(stack.scrollView.intrinsicContentSize.height == stack.container.scrollableContentHeight)
@@ -362,7 +362,7 @@ struct FitsContentEmptyDocMinHeightTests {
         let stack = HeightBehaviorStack(heightBehavior: .fitsContent)
         // A fresh text view with no text inserted — recalcOverscroll measures
         // the TextKit-2 content height, which returns at least one line height.
-        stack.textView.recalcOverscroll(for: stack.scrollView)
+        stack.textView.recalcOverscroll(for: stack.scrollView, forceFullMeasure: true)
 
         // baseContentHeight must be positive (at least one body line).
         #expect(stack.textView.baseContentHeight > 0)
@@ -575,7 +575,7 @@ struct FitsContentRecalcChainTests {
         let stack = HeightBehaviorStack(heightBehavior: .fitsContent)
 
         // Prime with an initial recalc (empty doc → one line height).
-        stack.textView.recalcOverscroll(for: stack.scrollView)
+        stack.textView.recalcOverscroll(for: stack.scrollView, forceFullMeasure: true)
         let initialHeight = stack.textView.frame.height
         #expect(initialHeight > 0)
 
@@ -589,7 +589,7 @@ struct FitsContentRecalcChainTests {
         // After a height change driven through recalcOverscroll, the
         // scroll view's intrinsicContentSize must reflect the new value.
         let stack = HeightBehaviorStack(heightBehavior: .fitsContent)
-        stack.textView.recalcOverscroll(for: stack.scrollView)
+        stack.textView.recalcOverscroll(for: stack.scrollView, forceFullMeasure: true)
         let initial = stack.scrollView.intrinsicContentSize.height
 
         // Manually set a taller base and re-run the recalc chain.
@@ -652,7 +652,7 @@ struct HeightChangeAfterRuntimeSwitchTests {
         config.heightBehavior = .scrolls
         stack.textView.configuration = config
         stack.scrollView.fitsContent = false
-        stack.textView.recalcOverscroll(for: stack.scrollView)
+        stack.textView.recalcOverscroll(for: stack.scrollView, forceFullMeasure: true)
         #expect(stack.textView.frame.height == 800) // inflated
 
         // Async height change: still below viewport → stays inflated.

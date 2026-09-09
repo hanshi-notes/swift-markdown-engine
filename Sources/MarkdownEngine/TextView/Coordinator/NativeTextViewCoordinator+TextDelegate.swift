@@ -103,7 +103,7 @@ extension NativeTextViewCoordinator {
             publishTextChange(tv.string)
             if let bottomTextView = tv as? NativeTextView,
                let scrollView = tv.enclosingScrollView {
-                bottomTextView.recalcOverscroll(for: scrollView, debugTag: "textDidChange")
+                bottomTextView.recalcOverscroll(for: scrollView, forceFullMeasure: false, debugTag: "textDidChange")
                 (scrollView as? ClampedScrollView)?.clampToInsets()
             }
             if let completedTextMutation {
@@ -367,7 +367,7 @@ extension NativeTextViewCoordinator {
         PerfTrace.measure("overscroll") {
             if let bottomTextView = tv as? NativeTextView,
                let scrollView = tv.enclosingScrollView {
-                bottomTextView.recalcOverscroll(for: scrollView, debugTag: "textDidChange")
+                bottomTextView.recalcOverscroll(for: scrollView, forceFullMeasure: false, debugTag: "textDidChange")
                 (scrollView as? ClampedScrollView)?.clampToInsets()
             }
         }
@@ -555,13 +555,22 @@ extension NativeTextViewCoordinator {
             && (paragraphsTouchRevealSyntax(previousSelectedRange) || paragraphsTouchRevealSyntax(selRange))
         // Mid-drag restyle is suppressed (revealing markers shifts the layout → drag hit-test lands short, dropping trailing chars) and replayed on release.
         let isDragSelecting = currentEventType == .leftMouseDragged || currentEventType == .periodic
+        // Every signal below exists to reveal or re-hide syntax under the caret or
+        // selection. With markers hidden the styler is handed caret -1, no selection
+        // and no active tokens, so the restyle repaints byte-identical attributes —
+        // and nothing shifts mid-drag either, so there is nothing to replay on release.
+        let revealsSyntaxAtCaret = configuration.showsMarkdownMarkersWhileEditing
         if shouldSkipSelectionRestyle {
             needsRestyleAfterDrag = false // textDidChange restyles this edit cycle.
         } else if isDragSelecting {
-            needsRestyleAfterDrag = true
-        } else if tokensChanged || taskSyntaxChanged || hrLineChanged || bulletSyntaxChanged
+            needsRestyleAfterDrag = revealsSyntaxAtCaret
+        } else if revealsSyntaxAtCaret,
+                  tokensChanged || taskSyntaxChanged || hrLineChanged || bulletSyntaxChanged
                     || selectionSpanChanged || needsRestyleAfterDrag {
             needsRestyleAfterDrag = false
+#if DEBUG
+            debugSelectionRestyleCount += 1
+#endif
             // Candidates are built ONLY when a restyle actually runs — this
             // used to happen unconditionally on every selection change,
             // including the mid-keystroke one that skips the restyle above.

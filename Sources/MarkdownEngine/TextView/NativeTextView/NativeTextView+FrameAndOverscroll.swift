@@ -17,21 +17,37 @@ extension NativeTextView {
         max(ceil(baseContentHeight + activeBottomOverscroll), 0)
     }
 
+    /// - Parameter forceFullMeasure: Re-measure against a full document layout until the
+    ///   height settles. File switches and resizes need it; typing must not pay it, so it
+    ///   stays O(edit). Every caller states its answer — this used to be inferred from
+    ///   whether a diagnostic string had been passed, which hid the cost at 6 of 9 sites.
     func recalcOverscroll(
         for scrollView: NSScrollView,
+        forceFullMeasure: Bool,
         targetWidth: CGFloat? = nil,
         debugTag: String = "?"
     ) {
         scrollView.contentInsets.bottom = 0
 
         let lineHeight = layoutBridgeDefaultLineHeight(for: self.baseFont, using: layoutBridge)
-        // File switch/resize forces full layout until height settles; typing stays O(edit).
-        if debugTag == "?" { pendingFullLayoutMeasure = true }
-        let forcedFullLayout = pendingFullLayoutMeasure
-        let measured = measuredBaseContentHeight(
+        if forceFullMeasure { pendingFullLayoutMeasure = true }
+        var forcedFullLayout = pendingFullLayoutMeasure
+        var measured = measuredBaseContentHeight(
             minimumHeight: lineHeight,
             forceFullLayout: pendingFullLayoutMeasure
         )
+        // A partial measure reads the end fragment's Y, so it is only as good as the
+        // layout above it: while anything up there is still estimated it under-measures.
+        // Shrinking the document on one pulls the scroll limit out from under a reader
+        // sitting below it — a re-tile with the width unchanged measured 19,176 points
+        // short on a 200k-character note and clamped the viewport up by exactly that.
+        // Only a full layout can be trusted downward, so confirm every proposed shrink
+        // with one. Growth needs no confirmation, and shrinks are rare.
+        if !forcedFullLayout, measured < baseContentHeight - 0.5 {
+            pendingFullLayoutMeasure = true
+            forcedFullLayout = true
+            measured = measuredBaseContentHeight(minimumHeight: lineHeight, forceFullLayout: true)
+        }
         let visibleHeight = scrollView.contentView.bounds.height
         let resolvedOverscroll = resolvedOverscroll(
             baseContentHeight: measured,
@@ -267,7 +283,8 @@ extension NativeTextView {
             isApplyingManagedFrameSize = false
         }
 
-        recalcOverscroll(for: scrollView, targetWidth: newSize.width, debugTag: "setFrameSize")
+        recalcOverscroll(for: scrollView, forceFullMeasure: false,
+                         targetWidth: newSize.width, debugTag: "setFrameSize")
 
         // Width change → only rendered table paragraphs need restyling. Their image
         // width can change, and an initially narrow table can become scrollable.
@@ -435,18 +452,55 @@ extension NativeTextView {
         }
     }
 
-    /// Force TextKit 2 to lay out all fragments within the current visible rect.
-    /// Walks from the document head, not the viewport: a fragment's Y is the
-    /// sum of the heights above it, so leaving anything above merely estimated
-    /// shifts the visible content when it later settles. A viewport-scoped walk
-    /// (tried as a perf win) caused content shifts, spurious caret reveals, and
-    /// a bistable frame height; steady-state cost here is an enumeration over
-    /// already-laid-out fragments.
+    /// Settle the prefix through the viewport: starting at the viewport itself
+    /// leaves estimated heights above it and causes content shifts. Resume at the
+    /// last settled fragment instead of walking that unchanged prefix every time.
     func ensureVisibleLayout() {
-        guard let tlm = textLayoutManager else { return }
+        guard let tlm = textLayoutManager, let content = tlm.textContentManager,
+              let container = textContainer, let storage = textStorage else { return }
+        if visibleLayoutStorage !== storage {
+            if let previous = visibleLayoutStorage {
+                NotificationCenter.default.removeObserver(self, name: NSTextStorage.didProcessEditingNotification, object: previous)
+            }
+            // Selector observers do not retain the view and are removed on deallocation.
+            NotificationCenter.default.addObserver(self, selector: #selector(visibleLayoutStorageDidEdit(_:)),
+                name: NSTextStorage.didProcessEditingNotification, object: storage)
+            visibleLayoutStorage = storage
+            visibleLayoutOffset = 0
+            visibleLayoutMaxY = -.infinity
+        }
+        if visibleLayoutWidth != container.size.width || visibleLayoutPadding != container.lineFragmentPadding {
+            visibleLayoutWidth = container.size.width
+            visibleLayoutPadding = container.lineFragmentPadding
+            visibleLayoutOffset = 0
+            visibleLayoutMaxY = -.infinity
+        }
         let visBot = visibleRect.maxY
-        tlm.enumerateTextLayoutFragments(from: tlm.documentRange.location, options: [.ensuresLayout]) { fragment in
-            fragment.layoutFragmentFrame.minY <= visBot
+        guard visBot >= visibleLayoutMaxY else { return }
+        let start = content.location(tlm.documentRange.location, offsetBy: visibleLayoutOffset)
+            ?? tlm.documentRange.location
+        var last: NSTextLayoutFragment?
+        tlm.enumerateTextLayoutFragments(from: start, options: [.ensuresLayout]) { fragment in
+            last = fragment
+            return fragment.layoutFragmentFrame.minY <= visBot
+        }
+        if let last {
+            visibleLayoutOffset = content.offset(from: tlm.documentRange.location, to: last.rangeInElement.location)
+            visibleLayoutMaxY = last.rangeInElement.endLocation.compare(tlm.documentRange.endLocation) == .orderedSame
+                ? .infinity : last.layoutFragmentFrame.maxY
+        }
+    }
+
+    @objc private func visibleLayoutStorageDidEdit(_ notification: Notification) {
+        guard let storage = notification.object as? NSTextStorage,
+              storage.editedRange.location != NSNotFound else { return }
+        // Include the preceding paragraph: deleting a newline can join it to the
+        // edited one. This also catches attributes, IME, undo, and full rebuilds.
+        let probe = max(0, min(storage.editedRange.location, storage.length) - 1)
+        let start = storage.mutableString.paragraphRange(for: NSRange(location: probe, length: 0)).location
+        if start <= visibleLayoutOffset {
+            visibleLayoutOffset = start
+            visibleLayoutMaxY = -.infinity
         }
     }
 }

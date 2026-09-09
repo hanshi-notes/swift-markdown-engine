@@ -93,6 +93,7 @@ public final class NativeTextViewCoordinator: NSObject, NSTextViewDelegate {
     var lastImageFingerprint: AnyHashable?
     var lastWikiFingerprint: AnyHashable?
     private var busObservers: [NSObjectProtocol] = []
+    var viewportObservers: [NSObjectProtocol] = []
     private var registeredAppearanceObserverName: Notification.Name?
     public internal(set) weak var textView: NSTextView?
     /// Owns the scroll-away header (build, content refresh, collapse/expand,
@@ -189,6 +190,8 @@ public final class NativeTextViewCoordinator: NSObject, NSTextViewDelegate {
     /// Diagnostic: whether the last completed textDidChange ran with a
     /// trusted single-edit descriptor (fast paths). Read by tests.
     var debugLastEditWasTrusted: Bool? = nil
+    /// Diagnostic: how many times a selection change has restyled. Read by tests.
+    var debugSelectionRestyleCount = 0
 #endif
     var pendingPreEditActiveTokenIndices: Set<Int>? = nil
     var previousCaretLocation: Int? = nil
@@ -487,6 +490,7 @@ public final class NativeTextViewCoordinator: NSObject, NSTextViewDelegate {
     deinit {
         NotificationCenter.default.removeObserver(self)
         busObservers.forEach(NotificationCenter.default.removeObserver(_:))
+        viewportObservers.forEach(NotificationCenter.default.removeObserver(_:))
     }
 }
 

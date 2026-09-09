@@ -23,6 +23,12 @@ final class NativeTextView: NSTextView {
     var isApplyingManagedFrameSize = false
     /// Set on switch/resize to force full-layout height measurement until the cascade settles.
     var pendingFullLayoutMeasure = false
+    // Settled layout prefix. Keep UTF-16 offsets, not locations from an old storage generation.
+    var visibleLayoutOffset = 0
+    var visibleLayoutMaxY: CGFloat = -.infinity
+    var visibleLayoutWidth: CGFloat = .nan
+    var visibleLayoutPadding: CGFloat = .nan
+    weak var visibleLayoutStorage: NSTextStorage?
     /// Coalesces wide-table overlay updates to once per runloop (resize fires many per frame).
     var pendingWideTableOverlayUpdate = false
     var suppressAutoRevealOnce: Bool = false

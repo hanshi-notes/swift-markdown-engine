@@ -340,7 +340,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         coordinator.onInlinePreviewKey = onInlinePreviewKey
         coordinator.onCodeBlockSelectionChange = onCodeBlockSelectionChange
 
-        textView.recalcOverscroll(for: scrollView)
+        textView.recalcOverscroll(for: scrollView, forceFullMeasure: true)
         textView.setPlaceholder(placeholder)
         // Initial reading-column centering; the resize observer below handles later changes.
         if configuration.readingWidth != nil {
@@ -348,7 +348,10 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         }
         scrollView.contentView.postsBoundsChangedNotifications = true
         var lastObservedViewportWidth = scrollView.contentView.bounds.width
-        NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scrollView.contentView, queue: nil) { _ in
+        coordinator.viewportObservers.append(NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification, object: scrollView.contentView, queue: nil
+        ) { [weak textView, weak scrollView, weak coordinator] _ in
+            guard let textView, let scrollView, let coordinator else { return }
             // Refresh code-block overlays only on real viewport width changes, not on TextKit height-only echoes during typing.
             let newWidth = scrollView.contentView.bounds.width
             if abs(newWidth - lastObservedViewportWidth) > 0.5 {
@@ -383,10 +386,13 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
                 return
             }
             guard abs(container.frame.height - scrollView.contentView.bounds.height) > 1 else { return }
-            textView.recalcOverscroll(for: scrollView)
+            textView.recalcOverscroll(for: scrollView, forceFullMeasure: true)
             scrollView.clampToInsets()
-        }
-        NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: nil) { _ in
+        })
+        coordinator.viewportObservers.append(NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: nil
+        ) { [weak textView, weak scrollView, weak coordinator] _ in
+            guard let textView, let scrollView, let coordinator else { return }
             textView.ensureVisibleLayout()
             if coordinator.isWritingToolsActive {
                 coordinator.fixWritingToolsChildWindowIfNeeded(textView: textView)
@@ -394,7 +400,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             scrollView.clampToInsets()
             coordinator.refreshActiveLinkCaretRect()
             coordinator.updateCodeBlockSelection(textView: textView)
-        }
+        })
         reconcileHeader(textView: textView, coordinator: coordinator)
         return scrollView
     }
@@ -490,7 +496,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         // When heightBehavior changes at runtime, re-measure and re-report so the
         // view reconfigures immediately (inflation toggles, overscroll zeroing).
         if heightBehaviorChanged {
-            textView.recalcOverscroll(for: nsView)
+            textView.recalcOverscroll(for: nsView, forceFullMeasure: true)
             (nsView as? ClampedScrollView)?.clampToInsets()
             nsView.invalidateIntrinsicContentSize()
         }
@@ -656,13 +662,13 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         let font = NSFont(name: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
         textView.font = font
         textView.baseFont = font
-        // Skip on switch: textView.string still holds the OUTGOING doc here, so the "?"
-        // tag would force a full ensureLayout of the doc about to be discarded (~274ms /
+        // Skip on switch: textView.string still holds the OUTGOING doc here, so a forced
+        // full ensureLayout would measure the doc about to be discarded (~274ms /
         // 7714 frags @346k). recalcOverscroll#2 after the rebuild measures the new doc;
         // scroll is parked at top so clampToInsets below stays in range. Non-switch
         // updates (font change, typing) must keep the forced full layout.
         if !isNodeSwitch {
-            textView.recalcOverscroll(for: nsView)
+            textView.recalcOverscroll(for: nsView, forceFullMeasure: true)
         }
         (nsView as? ClampedScrollView)?.clampToInsets()
 
@@ -681,7 +687,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             textView.setSelectedRange(NSRange(location: start, length: min(selectionBeforeUpdate.length, length - start)))
             nsView.contentView.scroll(to: scrollOriginBeforeUpdate)
         }
-        textView.recalcOverscroll(for: nsView)
+        textView.recalcOverscroll(for: nsView, forceFullMeasure: true)
         (nsView as? ClampedScrollView)?.clampToInsets()
         // Height is measured now, so restore the saved offset; clampToInsets keeps
         // it in range if the document got shorter. Latched rather than gated on
@@ -771,6 +777,9 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
     /// different screen — and that is the only moment left to record where the
     /// reader was; the coordinator's own offsets die with it.
     public static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
+        // Teardown must stop viewport work even when there is no scroll offset to save.
+        coordinator.viewportObservers.forEach(NotificationCenter.default.removeObserver(_:))
+        coordinator.viewportObservers.removeAll()
         // A restore still pending means the reader was never put back where they
         // were — recording the current offset would overwrite the good one with
         // the mid-load position.
