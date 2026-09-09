@@ -268,18 +268,49 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
         )
 
         let selectionRects = selectionRectsInDrawCoordinates(drawPoint: point, snappedY: snappedY, snappedMaxY: snappedMaxY)
-        color.setFill()
-        if selectionRects.isEmpty {
-            NSBezierPath(rect: bgRect).fill()
-        } else {
-            let path = NSBezierPath()
-            path.windingRule = .evenOdd
-            path.appendRect(bgRect)
-            for r in selectionRects {
-                path.appendRect(r.intersection(bgRect))
+
+        // A block spans one fragment per line, so rounding every fragment would bead the
+        // whole card. Round the outer ends only: a fragment with a code neighbour above or
+        // below grows its rounded rect past that edge by the radius, and the neighbour's
+        // fill covers the overhang in the same colour, leaving the join flush.
+        let radius = codeBlockCornerRadius
+        var shapeRect = bgRect
+        if radius > 0 {
+            if hasCodeBlockBackground(at: range.location - 1) {
+                shapeRect.origin.y -= radius
+                shapeRect.size.height += radius
             }
-            path.fill()
+            if hasCodeBlockBackground(at: NSMaxRange(range)) {
+                shapeRect.size.height += radius
+            }
         }
+
+        color.setFill()
+        let path = NSBezierPath()
+        path.windingRule = .evenOdd
+        if radius > 0 {
+            path.appendRoundedRect(shapeRect, xRadius: radius, yRadius: radius)
+        } else {
+            path.appendRect(shapeRect)
+        }
+        for r in selectionRects {
+            path.appendRect(r.intersection(bgRect))
+        }
+        path.fill()
+    }
+
+    private var codeBlockCornerRadius: CGFloat {
+        (textLayoutManager?.textContainer?.textView as? NativeTextView)?
+            .configuration.codeBlock.cornerRadius ?? 0
+    }
+
+    /// Whether the character at `index` carries the code-block fill, i.e. the block
+    /// continues past this fragment's edge.
+    private func hasCodeBlockBackground(at index: Int) -> Bool {
+        guard let ts = textStorage, index >= 0, index < ts.length,
+              let color = ts.attribute(.backgroundColor, at: index, effectiveRange: nil) as? NSColor
+        else { return false }
+        return isCodeBlockBackgroundColor(color)
     }
 
     /// Returns active text-selection rectangles intersecting this fragment, in

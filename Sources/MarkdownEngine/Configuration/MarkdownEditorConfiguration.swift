@@ -273,15 +273,21 @@ public struct CodeBlockStyle: Sendable {
     public var paragraphSpacing: CGFloat
     /// Left/right indent (in points) so code blocks don't run into the gutter.
     public var horizontalIndent: CGFloat
+    /// Corner radius of the block's background fill. Only the first and last
+    /// fragments of a block round; the joins between them stay flush, so a
+    /// multi-line block reads as one card. `0` keeps the square fill.
+    public var cornerRadius: CGFloat
 
     public init(
         fontSizeScale: CGFloat = 0.85,
         paragraphSpacing: CGFloat = 2.0,
-        horizontalIndent: CGFloat = 12.0
+        horizontalIndent: CGFloat = 12.0,
+        cornerRadius: CGFloat = 0
     ) {
         self.fontSizeScale = fontSizeScale
         self.paragraphSpacing = paragraphSpacing
         self.horizontalIndent = horizontalIndent
+        self.cornerRadius = cornerRadius
     }
 
     public static let `default` = CodeBlockStyle()

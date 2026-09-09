@@ -582,13 +582,28 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         textView.configuration.showsMarkdownMarkersWhileEditing = configuration.showsMarkdownMarkersWhileEditing
         coordinator.presentationIsEditable = isEditable
         if presentationChanged { coordinator.didInitialFormatting = false }
-        let typographyChanged = coordinator.configuration.headings.fontMultipliers != configuration.headings.fontMultipliers
-            || coordinator.configuration.headings.topSpacingEm != configuration.headings.topSpacingEm
-            || coordinator.configuration.codeBlock.fontSizeScale != configuration.codeBlock.fontSizeScale
+        // Every typography field the styler reads has to be listed here. A field that is
+        // assigned but not compared silently ignores a runtime change; one that is neither
+        // keeps whatever the first formatting pass saw, for the life of the view.
+        let old = coordinator.configuration
+        let typographyChanged = old.headings.fontMultipliers != configuration.headings.fontMultipliers
+            || old.headings.topSpacingEm != configuration.headings.topSpacingEm
+            || old.codeBlock.fontSizeScale != configuration.codeBlock.fontSizeScale
+            || old.codeBlock.paragraphSpacing != configuration.codeBlock.paragraphSpacing
+            || old.paragraph.lineHeightExtraSpacing != configuration.paragraph.lineHeightExtraSpacing
+            || old.paragraph.spacingFactor != configuration.paragraph.spacingFactor
+            || old.lists.extraLineHeight != configuration.lists.extraLineHeight
+            || old.blockquote.extraLineHeight != configuration.blockquote.extraLineHeight
         coordinator.configuration.headings = configuration.headings
         textView.configuration.headings = configuration.headings
         coordinator.configuration.codeBlock = configuration.codeBlock
         textView.configuration.codeBlock = configuration.codeBlock
+        coordinator.configuration.paragraph = configuration.paragraph
+        textView.configuration.paragraph = configuration.paragraph
+        coordinator.configuration.lists = configuration.lists
+        textView.configuration.lists = configuration.lists
+        coordinator.configuration.blockquote = configuration.blockquote
+        textView.configuration.blockquote = configuration.blockquote
         if typographyChanged { coordinator.didInitialFormatting = false }
         textView.isEditable = isEditable
         textView.isSelectable = true
