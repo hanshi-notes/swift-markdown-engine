@@ -17,6 +17,39 @@ import Testing
 
 @MainActor @Suite("Bottom scroll limit")
 struct BottomScrollLimitTests {
+    @Test(arguments: [false, true])
+    func shortDocumentTracksViewportHeightAfterResize(disableOverscroll: Bool) throws {
+        _ = NSApplication.shared
+        var configuration = MarkdownEditorConfiguration.default
+        if disableOverscroll { configuration.overscroll = OverscrollPolicy(percent: 0, maxPoints: 0, minPoints: 0) }
+        let wrapper = NativeTextViewWrapper(text: .constant("First line\nSecond line"),
+                                           configuration: configuration, isEditable: false)
+        let coordinator = wrapper.makeCoordinator()
+        let scroll = wrapper.makeAppKitView(coordinator: coordinator)
+        scroll.scrollerStyle = .overlay
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 760),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = scroll; window.orderFront(nil)
+        defer {
+            NativeTextViewWrapper.dismantleNSView(scroll, coordinator: coordinator)
+            window.contentView = nil; window.close()
+        }
+        wrapper.updateAppKitView(scroll, coordinator: coordinator)
+        let document = try #require(scroll.documentView as? NativeTextViewContainer)
+        // A one-point final resize used to leave a phantom scroll range.
+        for size in [NSSize(width: 700, height: 760), NSSize(width: 700, height: 300), NSSize(width: 700, height: 299),
+                     NSSize(width: 450, height: 240), NSSize(width: 450, height: 760)] {
+            window.setContentSize(size)
+            scroll.layoutSubtreeIfNeeded()
+            let viewport = scroll.contentView.bounds.height
+            try #require(document.scrollableContentHeight < viewport)
+            #expect(abs(document.frame.height - viewport) <= 0.5,
+                    "Short documents must fill the current viewport, not retain an earlier height")
+            #expect(scroll.verticalScroller?.isHidden == true)
+        }
+    }
+
     @Test(arguments: [(NSScroller.Style.overlay, NSScroller.Style.legacy),
                       (NSScroller.Style.legacy, NSScroller.Style.overlay)])
     func scrollerStyleChangeKeepsTheReaderAtTheBottom(from: NSScroller.Style, to: NSScroller.Style) throws {

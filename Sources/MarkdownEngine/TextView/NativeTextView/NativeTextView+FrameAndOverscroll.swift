@@ -65,9 +65,10 @@ extension NativeTextView {
         PerfTrace.note {
             "overscroll[\(debugTag)]: fullLayout=\(forcedFullLayout ? 1 : 0) h=\(Int(measured))\(baseHeightChanged ? " hChanged" : "")\(overscrollChanged ? " osChanged" : "")"
         }
-        guard baseHeightChanged || overscrollChanged else { return }
         baseContentHeight = measured
         activeBottomOverscroll = resolvedOverscroll
+        // The viewport can shrink while content and overscroll stay unchanged.
+        // Reapply its fill height so short documents do not retain a scrollable gap.
         applyManagedFrameSize(width: targetWidth ?? frame.size.width)
     }
 

@@ -385,7 +385,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
                 // changes are already handled by the width-change block above.
                 return
             }
-            guard abs(container.frame.height - scrollView.contentView.bounds.height) > 1 else { return }
+            guard abs(container.frame.height - scrollView.contentView.bounds.height) > 0.5 else { return }
             textView.recalcOverscroll(for: scrollView, forceFullMeasure: true)
             scrollView.clampToInsets()
         })
