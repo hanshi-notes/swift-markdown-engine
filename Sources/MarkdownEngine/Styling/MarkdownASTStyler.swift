@@ -891,11 +891,12 @@ enum MarkdownASTStyler {
         let linkID = ctx.wikiLinkID(range)
         var contentAttrs: [NSAttributedString.Key: Any] = [:]
         if let linkID { contentAttrs[.wikiLinkID] = linkID }
+        let resolution = ctx.config.services.wikiLinks.resolve(displayName: linkID ?? nodeName, range: name)
+        if let toolTip = resolution?.toolTip { contentAttrs[.toolTip] = toolTip }
         if !ctx.isActive(range) {
-            // Resolve by the stable UUID when present 
-            let exists = ctx.config.services.wikiLinks.resolve(displayName: linkID ?? nodeName, range: name)?.exists ?? false
-            if exists {
-                contentAttrs[.link] = linkID ?? nodeName
+            if resolution?.exists == true {
+                if let destination = resolution?.destination { contentAttrs[.link] = destination }
+                else { contentAttrs[.link] = linkID ?? nodeName }
             } else {
                 contentAttrs[.foregroundColor] = ctx.theme.disabledText
             }

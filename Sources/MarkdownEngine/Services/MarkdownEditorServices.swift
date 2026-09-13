@@ -54,9 +54,16 @@ public struct WikiLinkResolution: Sendable, Equatable {
     /// Whether the linked target currently exists/is reachable.
     public let exists: Bool
 
-    public init(id: String, exists: Bool) {
+    /// Optional navigation URL supplied by file-backed embedders; does not alter stored Markdown.
+    public let destination: URL?
+    /// Explains the destination or why the link cannot be resolved.
+    public let toolTip: String?
+
+    public init(id: String, exists: Bool, destination: URL? = nil, toolTip: String? = nil) {
         self.id = id
         self.exists = exists
+        self.destination = destination
+        self.toolTip = toolTip
     }
 }
 
