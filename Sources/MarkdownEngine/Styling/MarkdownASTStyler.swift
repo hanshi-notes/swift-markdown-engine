@@ -419,6 +419,9 @@ enum MarkdownASTStyler {
             ? ctx.ns.substring(with: NSRange(location: NSMaxRange(item.marker) - 1, length: 1)) : "."
         // Via the memoized measure — list markers are a tiny repeated set (`- `, `1. `).
         let markerWidth: CGFloat = {
+            if item.ordered, item.checkbox != nil, !taskRevealed {
+                return HeadingHelpers.textWidth("- ", font: ctx.baseFont)
+            }
             if orderedOverlayActive, let displayNumber {
                 let gap = ctx.ns.substring(with: NSRange(location: NSMaxRange(item.marker),
                                                          length: item.contentRange.location - NSMaxRange(item.marker)))
@@ -452,8 +455,17 @@ enum MarkdownASTStyler {
             // `- ` keeps full advance (the box's slot, like the bullet `•`);
             // `[ ]` + trailing space collapse to the hidden-marker font so the
             // content starts at the bullet-content x.
-            attrs.append((item.marker, [.foregroundColor: NSColor.clear]))
-            if spacer.length > 0 { attrs.append((spacer, [.foregroundColor: NSColor.clear])) }
+            if item.ordered {
+                // Hidden numbers must occupy one bullet-sized slot, regardless of
+                // proportional digit widths or the number of digits in the source.
+                let hiddenWidth = (ctx.ns.substring(with: markerGroup) as NSString)
+                    .size(withAttributes: [.font: ctx.inlineMarkerFont]).width
+                attrs.append((markerGroup, [.foregroundColor: NSColor.clear, .font: ctx.inlineMarkerFont,
+                    .kern: (markerWidth - hiddenWidth) / CGFloat(max(1, markerGroup.length))]))
+            } else {
+                attrs.append((item.marker, [.foregroundColor: NSColor.clear]))
+                if spacer.length > 0 { attrs.append((spacer, [.foregroundColor: NSColor.clear])) }
+            }
             attrs.append((box, [.taskCheckbox: item.checked, .foregroundColor: NSColor.clear,
                                 .font: ctx.inlineMarkerFont]))
             let postGap = NSRange(location: NSMaxRange(box),

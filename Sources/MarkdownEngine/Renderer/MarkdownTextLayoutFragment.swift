@@ -828,23 +828,6 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
             // char's font (0.1pt in a heading-first doc → 1px boxes).
             let font = (textLayoutManager?.textContainer?.textView as? NativeTextView)?.baseFont
                 ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
-            let ascent = max(0, font.ascender)
-            let descent = max(0, -font.descender)
-            let size = TaskCheckboxGeometry.size(for: font)
-            let boxX = TaskCheckboxGeometry.boxX(contentX: pos.x, size: size)
-            let centerY = pos.baselineY + (descent - ascent) / 2
-            let boxY = centerY - size / 2
-
-            let scale = textLayoutManager?.textContainer?.textView?.window?.backingScaleFactor
-                ?? NSScreen.main?.backingScaleFactor ?? 2.0
-            func alignToPixel(_ value: CGFloat) -> CGFloat {
-                (value * scale).rounded(.toNearestOrAwayFromZero) / scale
-            }
-            let boxRect = CGRect(x: alignToPixel(boxX), y: alignToPixel(boxY), width: size, height: size)
-            guard !boxRect.isEmpty, !boxRect.isNull else { return }
-
-            let iconInset = max(0.0, size * 0.01)
-            let iconRect = boxRect.insetBy(dx: iconInset, dy: iconInset)
             let configuration = (textLayoutManager?.textContainer?.textView as? NativeTextView)?.configuration
                 ?? .default
             let style = configuration.taskCheckbox
@@ -854,11 +837,24 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
                 : TaskCheckboxStyle.default.uncheckedSymbolName
             if let baseSymbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
                 ?? NSImage(systemSymbolName: fallbackName, accessibilityDescription: nil) {
-                let sizeConfig = NSImage.SymbolConfiguration(pointSize: iconRect.height, weight: .regular)
+                let sizeConfig = NSImage.SymbolConfiguration(pointSize: font.pointSize, weight: .regular)
                 let tint = isChecked ? configuration.theme.bodyText : configuration.theme.mutedText
                 let colorConfig = NSImage.SymbolConfiguration(hierarchicalColor: tint)
                 let symbolConfig = sizeConfig.applying(colorConfig)
                 let symbol = baseSymbol.withSymbolConfiguration(symbolConfig) ?? baseSymbol
+                // Align the symbol's visual center with the label's actual ink,
+                // including its font traits, rather than the font's line box.
+                let localBox = attrRange.location - range.location
+                guard let line = textLineFragments.first(where: { NSLocationInRange(localBox, $0.characterRange) }) else { return }
+                let labelStart = NSMaxRange(attrRange)
+                let labelEnd = min(ts.length, range.location + NSMaxRange(line.characterRange))
+                let label = ts.attributedSubstring(from: NSRange(location: labelStart, length: max(0, labelEnd - labelStart)))
+                let ink = CTLineGetImageBounds(CTLineCreateWithAttributedString(label), nil)
+                let labelCenter = ink.isNull || ink.isEmpty ? font.xHeight / 2 : ink.midY
+                let iconRect = CGRect(
+                    x: TaskCheckboxGeometry.boxX(contentX: pos.x, size: symbol.size.width),
+                    y: pos.baselineY - labelCenter - symbol.size.height + symbol.alignmentRect.midY,
+                    width: symbol.size.width, height: symbol.size.height)
                 symbol.draw(in: iconRect)
             }
         }
