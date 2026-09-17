@@ -38,7 +38,10 @@ enum MarkdownASTStyler {
         let baseParagraphSpacing = ceil(baseLineHeight * configuration.paragraph.spacingFactor)
         let codeFontSize = round(fontSize * configuration.codeBlock.fontSizeScale)
         let hiddenSize = configuration.markers.hiddenMarkerFontSize
-        let ns = text as NSString
+        // A native Swift string bridges as UTF-8 that the data detector and regexes transcode chunk by
+        // chunk: 1.5 s instead of 0.3 s on a 1 MB non-ASCII note. Text read back from the text view is
+        // already a Foundation string, and this returns it as is.
+        let ns = NSString(string: text)
         let codeFont = configuration.services.syntaxHighlighter.codeFont(size: codeFontSize)
         let codeLineHeight = ceil(codeFont.ascender - codeFont.descender + codeFont.leading)
         let codePara = NSMutableParagraphStyle()
@@ -80,9 +83,9 @@ enum MarkdownASTStyler {
         shrinkInactiveMarkers(in: blocks, ctx: ctx, into: &attrs)
 
         // Text/regex passes (AST-agnostic); AST code ranges drive the "skip inside code" checks.
-        let codeRanges = collectCodeRanges(in: blocks)
-        let checkboxRanges = collectCheckboxRanges(in: blocks)
-        let linkRanges = collectLinkRanges(in: blocks)
+        let codeRanges = RangeLookup(collectCodeRanges(in: blocks))
+        let checkboxRanges = RangeLookup(collectCheckboxRanges(in: blocks))
+        let linkRanges = RangeLookup(collectLinkRanges(in: blocks))
         styleAutoLinks(ctx: ctx, codeRanges: codeRanges, linkRanges: linkRanges, into: &attrs)
         styleIncompleteLinkBrackets(ctx: ctx, codeRanges: codeRanges, checkboxRanges: checkboxRanges, into: &attrs)
         return attrs
@@ -118,8 +121,30 @@ enum MarkdownASTStyler {
         return ranges
     }
 
-    private static func isInCode(_ range: NSRange, _ codeRanges: [NSRange]) -> Bool {
-        codeRanges.contains { NSIntersectionRange($0, range).length > 0 }
+    /// Answers "does any of these ranges overlap?" by binary search. Scanning every code span,
+    /// link and checkbox per regex match was quadratic: 4.4 s of a 1 MB note's first open.
+    struct RangeLookup {
+        private let starts: [Int]
+        /// The furthest end among the ranges up to each index, so nested and overlapping ones count.
+        private let reach: [Int]
+
+        init(_ ranges: [NSRange]) {
+            let sorted = ranges.filter { $0.length > 0 }.sorted { $0.location < $1.location }
+            starts = sorted.map(\.location)
+            var end = Int.min
+            reach = sorted.map { end = max(end, NSMaxRange($0)); return end }
+        }
+
+        func intersects(_ range: NSRange) -> Bool {
+            guard range.length > 0 else { return false }
+            var low = 0, high = starts.count
+            while low < high {
+                let mid = (low + high) / 2
+                if starts[mid] < NSMaxRange(range) { low = mid + 1 } else { high = mid }
+            }
+            // Every range before `low` starts before this one ends; one of them must also end after it starts.
+            return low > 0 && reach[low - 1] > range.location
+        }
     }
 
     /// Full ranges of markdown links `[text](url)` and wiki links `[[…]]`. The NSDataDetector
@@ -518,21 +543,21 @@ enum MarkdownASTStyler {
         }
     }
 
-    private static func styleAutoLinks(ctx: Ctx, codeRanges: [NSRange], linkRanges: [NSRange], into attrs: inout [StyledRange]) {
+    private static func styleAutoLinks(ctx: Ctx, codeRanges: RangeLookup, linkRanges: RangeLookup, into attrs: inout [StyledRange]) {
         guard let detector = autoLinkDetector else { return }
         for scan in ctx.scanRanges {
             detector.enumerateMatches(in: ctx.text, range: scan) { match, _, _ in
                 // Skip URLs inside code and inside a markdown/wiki link's own range — a link's
                 // `(url)` must not become a second `.link` region competing with the link itself.
                 guard let match, let url = match.url,
-                      !isInCode(match.range, codeRanges),
-                      !isInCode(match.range, linkRanges) else { return }
+                      !codeRanges.intersects(match.range),
+                      !linkRanges.intersects(match.range) else { return }
                 attrs.append((match.range, [.link: url]))
             }
         }
     }
 
-    private static func styleIncompleteLinkBrackets(ctx: Ctx, codeRanges: [NSRange], checkboxRanges: [NSRange], into attrs: inout [StyledRange]) {
+    private static func styleIncompleteLinkBrackets(ctx: Ctx, codeRanges: RangeLookup, checkboxRanges: RangeLookup, into attrs: inout [StyledRange]) {
         // Every pattern starts with `\[`, so no `[` in the text ⇒ no match: skip
         // all 6 regex sweeps (the 78ms on hits=0 docs).
         guard ctx.ns.range(of: "[").location != NSNotFound else { return }
@@ -541,7 +566,7 @@ enum MarkdownASTStyler {
         for re in incompleteLinkPatterns {
             for scan in ctx.scanRanges {
               for m in re.matches(in: ctx.text, options: [], range: scan)
-                  where !isInCode(m.range, codeRanges) && !isInCode(m.range, checkboxRanges) {
+                  where !codeRanges.intersects(m.range) && !checkboxRanges.intersects(m.range) {
                 // One range per RUN of same-colored characters, not per character: a
                 // single `[Design System]` used to emit 15 ranges, and the note in the
                 // bug report reached 25,504 from this pass alone — every one of them a
