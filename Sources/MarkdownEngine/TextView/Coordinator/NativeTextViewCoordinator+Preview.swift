@@ -1,26 +1,33 @@
 import AppKit
 
 extension NativeTextViewCoordinator {
-    /// Maps source offsets through shortened wiki links for reading-position anchors.
-    public func previewRange(fromSourceRange range: NSRange) -> NSRange? {
+    /// Maps source ranges through shortened wiki links for reading-position anchors; nil for a range
+    /// outside the source. Takes every anchor at once: sorting the links per range made a large note's
+    /// anchors cost anchors × links.
+    public func previewRanges(fromSourceRanges ranges: [NSRange]) -> [NSRange?] {
         let length = (lastSyncedText as NSString).length
-        guard range.location >= 0, range.location <= length,
-              range.length >= 0, range.length <= length - range.location else { return nil }
-        let links = wikiLinkMetadata.sorted { $0.value.storageRange.location < $1.value.storageRange.location }
+        let links = wikiLinkMetadata.map { (display: $0.key, source: $0.value.storageRange) }
+            .sorted { $0.source.location < $1.source.location }
         func offset(_ sourceOffset: Int) -> Int {
-            var delta = 0
-            for (display, metadata) in links {
-                let source = metadata.storageRange
-                if sourceOffset < source.location { break }
-                if sourceOffset <= NSMaxRange(source) {
-                    return display.location + min(sourceOffset - source.location, display.length)
-                }
-                delta = display.location + display.length - NSMaxRange(source)
+            // Links never overlap, so the last one starting at or before the offset decides it.
+            var low = 0, high = links.count
+            while low < high {
+                let mid = (low + high) / 2
+                if links[mid].source.location <= sourceOffset { low = mid + 1 } else { high = mid }
             }
-            return sourceOffset + delta
+            guard low > 0 else { return sourceOffset }
+            let (display, source) = links[low - 1]
+            if sourceOffset <= NSMaxRange(source) {
+                return display.location + min(sourceOffset - source.location, display.length)
+            }
+            return sourceOffset + display.location + display.length - NSMaxRange(source)
         }
-        let start = offset(range.location)
-        return NSRange(location: start, length: offset(NSMaxRange(range)) - start)
+        return ranges.map { range in
+            guard range.location >= 0, range.location <= length,
+                  range.length >= 0, range.length <= length - range.location else { return nil }
+            let start = offset(range.location)
+            return NSRange(location: start, length: offset(NSMaxRange(range)) - start)
+        }
     }
 
     /// Bounds in the text view's coordinates without triggering TextKit 1 fallback.
