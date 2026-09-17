@@ -192,6 +192,21 @@ struct MarkdownASTStylerTests {
         })
     }
 
+    /// Regression: scheme-less targets were prefixed with `https://`, so relative notes and
+    /// anchors opened as web hosts and `mailto:a@b.com` opened `https://b.com`.
+    @Test("a link carries its destination as written", arguments: [
+        "https://example.com", "mailto:a@b.com", "tel:911", "other.md", "sub/note.md#intro", "#heading",
+    ])
+    func linkCarriesDestinationAsWritten(destination: String) {
+        let attrs = MarkdownASTStyler.styleAttributes(
+            text: "[x](\(destination))",
+            fontName: fontName,
+            fontSize: base
+        )
+
+        #expect(attrs.compactMap { ($0.attributes[.link] as? URL)?.absoluteString } == [destination])
+    }
+
     @Test("a revealed link target is muted like its brackets")
     func activeLinkTargetIsMuted() {
         //          0123456789012345678901

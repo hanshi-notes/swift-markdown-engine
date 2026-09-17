@@ -872,10 +872,9 @@ enum MarkdownASTStyler {
         children: [InlineNode], font: NSFont, ctx: Ctx, into attrs: inout [StyledRange]
     ) {
         attrs.append((range, [.spellingState: 0]))
-        var urlString = ctx.ns.substring(with: urlRange)
-        if !urlString.contains("://") { urlString = "https://\(urlString)" }
+        // As written, like CommonMark: a scheme-less target is relative, not a web host.
         let isActive = ctx.isActive(range)
-        if let url = URL(string: urlString) {
+        if let url = URL(string: ctx.ns.substring(with: urlRange)) {
             if isActive {
                 attrs.append((textRange, [
                     .foregroundColor: ctx.theme.link.withAlphaComponent(ctx.config.link.activeLinkAlpha),
