@@ -17,12 +17,12 @@ enum MarkdownTokenizer {
 
     // MARK: - Code Block Helpers
 
-    static func extractLanguage(from token: MarkdownToken, in text: String) -> String? {
+    /// Takes the Foundation string callers already hold: a text view's `string` copies the document.
+    static func extractLanguage(from token: MarkdownToken, in nsText: NSString) -> String? {
         guard token.kind == .codeBlock,
               let openingMarker = token.markerRanges.first,
               openingMarker.length > 4 else { return nil }
 
-        let nsText = text as NSString
         let langRange = NSRange(location: openingMarker.location + 3, length: openingMarker.length - 4)
 
         guard langRange.location + langRange.length <= nsText.length else { return nil }

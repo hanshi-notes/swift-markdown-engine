@@ -18,7 +18,7 @@ extension MarkdownStyler {
             guard !ctx.outsideScope(token.range), !ctx.activeTokenIndices.contains(index),
                   token.contentRange.length > 0, token.markerRanges.count >= 2 else { continue }
             let source = ctx.nsText.substring(with: token.contentRange)
-            let language = MarkdownTokenizer.extractLanguage(from: token, in: ctx.nsText as String)
+            let language = MarkdownTokenizer.extractLanguage(from: token, in: ctx.nsText)
             guard let image = ctx.services.images.image(forCodeBlock: source, language: language),
                   image.size.width > 0, image.size.height > 0 else { continue }
             let available = ctx.layoutBridge?.firstTextContainer?.containerSize.width ?? ctx.configuration.imageEmbed.fallbackMaxWidth
@@ -41,8 +41,11 @@ extension MarkdownStyler {
     /// at which point we fall back to dimming the markdown source).
     static func styleImageLinks(_ ctx: StylingContext) -> [StyledRange] {
         var attrs: [StyledRange] = []
-        for (idx, token) in ctx.scoped(ctx.imageLinkIndexed) {
-            if MarkdownDetection.isInsideCodeBlock(range: token.range, codeTokens: ctx.codeTokens) { continue }
+        let scopedLinks = ctx.scoped(ctx.imageLinkIndexed)
+        guard !scopedLinks.isEmpty else { return attrs }
+        let code = RangeLookup(ctx.codeTokens.map(\.range))
+        for (idx, token) in scopedLinks {
+            if code.intersects(token.range) { continue }
 
             // The URL lives between markerRanges[2] ('(') and markerRanges[3] (')').
             guard token.markerRanges.count >= 4 else {
@@ -137,8 +140,11 @@ extension MarkdownStyler {
 
     static func styleImageEmbeds(_ ctx: StylingContext) -> [StyledRange] {
         var attrs: [StyledRange] = []
-        for (idx, token) in ctx.scoped(ctx.imageEmbedIndexed) {
-            if MarkdownDetection.isInsideCodeBlock(range: token.range, codeTokens: ctx.codeTokens) { continue }
+        let scopedEmbeds = ctx.scoped(ctx.imageEmbedIndexed)
+        guard !scopedEmbeds.isEmpty else { return attrs }
+        let code = RangeLookup(ctx.codeTokens.map(\.range))
+        for (idx, token) in scopedEmbeds {
+            if code.intersects(token.range) { continue }
 
             let isActive = ctx.activeTokenIndices.contains(idx)
             let rawContent = ctx.nsText.substring(with: token.contentRange)  // = display name (no suffix)

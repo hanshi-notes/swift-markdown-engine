@@ -89,7 +89,7 @@ extension NativeTextViewCoordinator {
             return CodeBlockSelection(
                 id: originalIndex,
                 rect: boundingRect,
-                language: MarkdownTokenizer.extractLanguage(from: token, in: textView.string),
+                language: MarkdownTokenizer.extractLanguage(from: token, in: nsText),
                 code: nsText.substring(with: token.contentRange)
             )
         }

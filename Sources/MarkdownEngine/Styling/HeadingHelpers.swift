@@ -11,15 +11,22 @@ import AppKit
 enum HeadingHelpers {
 
     /// Use heading context to scale LaTeX font size consistently with surrounding text.
-    /// `headings` is the document's heading tokens, built once per styling pass —
-    /// scanning all tokens per LaTeX token here was O(#latex × #tokens).
+    /// `headings` is the document's heading tokens in document order, built once per
+    /// styling pass. Headings never overlap, so only the last one starting at or before
+    /// the formula can hold it — a scan per formula was O(#latex × #headings).
     static func latexFontSize(
         for token: MarkdownToken,
         headings: [MarkdownToken],
         baseFont: NSFont,
         configuration: HeadingStyle = .default
     ) -> CGFloat {
-        if let headingToken = headings.first(where: { NSLocationInRange(token.contentRange.location, $0.contentRange) }) {
+        let location = token.contentRange.location
+        var low = 0, high = headings.count
+        while low < high {
+            let mid = (low + high) / 2
+            if headings[mid].contentRange.location <= location { low = mid + 1 } else { high = mid }
+        }
+        if low > 0, case let headingToken = headings[low - 1], NSLocationInRange(location, headingToken.contentRange) {
             let level = headingToken.markerRanges.first?.length ?? 1
             return baseFont.pointSize * configuration.fontMultiplier(for: level)
         }

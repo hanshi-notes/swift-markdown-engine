@@ -864,6 +864,16 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
 // MARK: - Layout Manager Delegate
 
 final class MarkdownLayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate {
+    private struct ExtraLineInputs: Equatable {
+        let font: NSFont
+        let extraSpacing: CGFloat
+        let spacingFactor: CGFloat
+        let color: NSColor
+    }
+    /// Every paragraph laid out gets a fragment, and building these per fragment
+    /// cost a 1 MB note ~150 ms on open. They only change with their inputs.
+    private var extraLine: (inputs: ExtraLineInputs, attributes: NSDictionary)?
+
     func textLayoutManager(
         _ textLayoutManager: NSTextLayoutManager,
         textLayoutFragmentFor location: any NSTextLocation,
@@ -881,18 +891,27 @@ final class MarkdownLayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate
         let fragment = MarkdownTextLayoutFragment(textElement: textElement, range: textElement.elementRange)
         // Seed body font + paragraphStyle so the trailing fragment doesn't inherit heading metrics (FB15131180).
         if let textView = textLayoutManager.textContainer?.textView as? NativeTextView {
-            let baseFont = textView.baseFont
-            let para = NSMutableParagraphStyle()
-            let lineHeight = layoutBridgeDefaultLineHeight(for: baseFont, using: textView.layoutBridge)
-            para.minimumLineHeight = ceil(lineHeight) + textView.configuration.paragraph.lineHeightExtraSpacing
-            para.paragraphSpacing = ceil(lineHeight * textView.configuration.paragraph.spacingFactor)
-            para.paragraphSpacingBefore = 0
-            fragment.stExtraLineFragmentAttributes = NSDictionary(dictionary: [
-                NSAttributedString.Key.font: baseFont,
-                NSAttributedString.Key.foregroundColor: textView.configuration.theme.bodyText,
-                NSAttributedString.Key.paragraphStyle: para
-            ])
+            fragment.stExtraLineFragmentAttributes = extraLineAttributes(for: textView)
         }
         return fragment
+    }
+
+    private func extraLineAttributes(for textView: NativeTextView) -> NSDictionary {
+        let paragraph = textView.configuration.paragraph
+        let inputs = ExtraLineInputs(font: textView.baseFont, extraSpacing: paragraph.lineHeightExtraSpacing,
+                                     spacingFactor: paragraph.spacingFactor, color: textView.configuration.theme.bodyText)
+        if let extraLine, extraLine.inputs == inputs { return extraLine.attributes }
+        let para = NSMutableParagraphStyle()
+        let lineHeight = layoutBridgeDefaultLineHeight(for: inputs.font, using: textView.layoutBridge)
+        para.minimumLineHeight = ceil(lineHeight) + inputs.extraSpacing
+        para.paragraphSpacing = ceil(lineHeight * inputs.spacingFactor)
+        para.paragraphSpacingBefore = 0
+        let attributes = NSDictionary(dictionary: [
+            NSAttributedString.Key.font: inputs.font,
+            NSAttributedString.Key.foregroundColor: inputs.color,
+            NSAttributedString.Key.paragraphStyle: para
+        ])
+        extraLine = (inputs, attributes)
+        return attributes
     }
 }

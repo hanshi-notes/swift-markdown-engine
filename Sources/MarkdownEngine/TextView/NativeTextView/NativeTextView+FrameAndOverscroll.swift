@@ -146,22 +146,15 @@ extension NativeTextView {
             return visited < 3
         }
 
-        // End-segment maxY = authoritative document height in TextKit 2.
-        let segmentRange = NSTextRange(location: documentEnd)
-        textLayoutManager.ensureLayout(for: segmentRange)
-        var segmentMaxY: CGFloat = 0
-        var segmentMinY: CGFloat = 0
-        textLayoutManager.enumerateTextSegments(
-            in: segmentRange,
-            type: .standard,
-            options: .middleFragmentsExcluded
-        ) { _, rect, _, _ in
-            if rect.maxY >= segmentMaxY {
-                segmentMaxY = rect.maxY
-                segmentMinY = rect.minY
-            }
-            return true
-        }
+        // The caret box at the document end = authoritative document height in TextKit 2.
+        // It is the last line of the fragment holding the end, the extra line after a
+        // trailing newline included. Asking for it as a text segment returned the same box
+        // but resolved the bidi direction of the whole last paragraph first: seconds per
+        // keystroke when that paragraph is one long line of inline styles
+        // (DocumentEndMeasureTests pins the two against each other).
+        textLayoutManager.ensureLayout(for: NSTextRange(location: documentEnd))
+        let segmentMinY = lastFragmentLineBoxes.last.map { lastFragmentFrame.minY + $0.minY } ?? 0
+        let segmentMaxY = lastFragmentLineBoxes.last.map { lastFragmentFrame.minY + $0.maxY } ?? 0
 
         var rawHeight = max(segmentMaxY, fragmentMaxY)
 

@@ -16,8 +16,11 @@ extension MarkdownStyler {
 
     static func styleBlockLatex(_ ctx: StylingContext) -> [StyledRange] {
         var attrs: [StyledRange] = []
-        for (idx, token) in ctx.scoped(ctx.blockLatexIndexed) {
-            if MarkdownDetection.isInsideCodeBlock(range: token.range, codeTokens: ctx.codeTokens) { continue }
+        let scopedBlocks = ctx.scoped(ctx.blockLatexIndexed)
+        guard !scopedBlocks.isEmpty else { return attrs }
+        let code = RangeLookup(ctx.codeTokens.map(\.range))
+        for (idx, token) in scopedBlocks {
+            if code.intersects(token.range) { continue }
             let isActive = ctx.activeTokenIndices.contains(idx)
             let rawLatexContent = ctx.nsText.substring(with: token.contentRange)
             let latexContent = rawLatexContent.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -70,9 +73,10 @@ extension MarkdownStyler {
         guard !scopedLatex.isEmpty else { return attrs }
         // Containers that ENCLOSE an in-scope formula must overlap the scope, so
         // scope-slicing these is exact; built once, not per formula.
-        let tableRanges = ctx.scoped(ctx.tableIndexed).map { $0.token.range }
+        let tables = RangeLookup(ctx.scoped(ctx.tableIndexed).map { $0.token.range })
         // Quote lines mute their text via foregroundColor, which the LaTeX *image* ignores — render it in mutedText instead so it matches the grey.
-        let blockquoteRanges = MarkdownStyler.StylingContext.indexed(ctx.tokens, .blockquote).map { $0.token.range }
+        let blockquotes = RangeLookup(MarkdownStyler.StylingContext.indexed(ctx.tokens, .blockquote).map { $0.token.range })
+        let code = RangeLookup(ctx.codeTokens.map(\.range))
         // Built once, not re-scanned per formula (latexFontSize was O(#latex × #tokens)).
         let headings = ctx.scoped(MarkdownStyler.StylingContext.indexed(ctx.tokens, .heading)).map { $0.token }
         // Each textWidth is a CoreText measurement; the two "$" marker widths are
@@ -89,11 +93,7 @@ extension MarkdownStyler {
             return w
         }
         for (idx, token) in scopedLatex {
-            if MarkdownDetection.isInsideCodeBlock(range: token.range, codeTokens: ctx.codeTokens) { continue }
-            if tableRanges.contains(where: { tableRange in
-                token.range.location >= tableRange.location
-                    && NSMaxRange(token.range) <= NSMaxRange(tableRange)
-            }) { continue }
+            if code.intersects(token.range) || tables.encloses(token.range) { continue }
 
             attrs.append((token.range, [NSAttributedString.Key.spellingState: 0]))
 
@@ -107,7 +107,7 @@ extension MarkdownStyler {
                 }
             } else {
                 var renderTheme = ctx.configuration.theme
-                if blockquoteRanges.contains(where: { NSLocationInRange(token.range.location, $0) }) {
+                if blockquotes.contains(location: token.range.location) {
                     renderTheme.latexLightModeText = renderTheme.mutedText
                     renderTheme.latexDarkModeText = renderTheme.mutedText
                 }

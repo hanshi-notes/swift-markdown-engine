@@ -121,32 +121,6 @@ enum MarkdownASTStyler {
         return ranges
     }
 
-    /// Answers "does any of these ranges overlap?" by binary search. Scanning every code span,
-    /// link and checkbox per regex match was quadratic: 4.4 s of a 1 MB note's first open.
-    struct RangeLookup {
-        private let starts: [Int]
-        /// The furthest end among the ranges up to each index, so nested and overlapping ones count.
-        private let reach: [Int]
-
-        init(_ ranges: [NSRange]) {
-            let sorted = ranges.filter { $0.length > 0 }.sorted { $0.location < $1.location }
-            starts = sorted.map(\.location)
-            var end = Int.min
-            reach = sorted.map { end = max(end, NSMaxRange($0)); return end }
-        }
-
-        func intersects(_ range: NSRange) -> Bool {
-            guard range.length > 0 else { return false }
-            var low = 0, high = starts.count
-            while low < high {
-                let mid = (low + high) / 2
-                if starts[mid] < NSMaxRange(range) { low = mid + 1 } else { high = mid }
-            }
-            // Every range before `low` starts before this one ends; one of them must also end after it starts.
-            return low > 0 && reach[low - 1] > range.location
-        }
-    }
-
     /// Full ranges of markdown links `[text](url)` and wiki links `[[…]]`. The NSDataDetector
     /// auto-link pass skips URLs inside these, so a link's own `(url)` isn't independently
     /// linkified into a second, competing `.link` region overlapping the link (which offsets
@@ -241,7 +215,7 @@ enum MarkdownASTStyler {
             para.minimumLineHeight = height
             para.maximumLineHeight = height
         }
-        attrs.append((hr, [.paragraphStyle: para]))
+        attrs.append((ctx.ns.paragraphRange(for: hr), [.paragraphStyle: para]))
     }
 
     /// The marker character of a thematic-break line: its first non-whitespace
@@ -471,7 +445,7 @@ enum MarkdownASTStyler {
         // firstLineHeadIndent) shifted an unchecked task's wrapped lines right
         // of its first line.
         ps.headIndent = ctx.config.lists.indentPerLevel + depthIndent + markerWidth
-        attrs.append((line, [.paragraphStyle: ps]))
+        attrs.append((ctx.ns.paragraphRange(for: line), [.paragraphStyle: ps]))
 
         // 2. Marker decoration (suppressed while the caret edits the syntax).
         if let box = item.checkbox {
@@ -783,9 +757,11 @@ enum MarkdownASTStyler {
 
     private static func styleCodeBlock(range: NSRange, ctx: Ctx, into attrs: inout [StyledRange]) {
         let parts = codeBlockParts(range, ctx.ns)
-        attrs.append((parts.codeRange, [
-            .font: ctx.codeFont, .backgroundColor: ctx.codeBackground, .paragraphStyle: ctx.codeParagraphStyle,
-        ]))
+        attrs.append((parts.codeRange, [.font: ctx.codeFont, .backgroundColor: ctx.codeBackground]))
+        // Whole paragraphs, closing newline included: TextKit would otherwise fix each paragraph to
+        // its first character's style before layout, a storage mutation per paragraph that grows
+        // with the document (see LargeDocumentStylingTests).
+        attrs.append((ctx.ns.paragraphRange(for: parts.codeRange), [.paragraphStyle: ctx.codeParagraphStyle]))
         // Suppress spell-check underlines on the whole fenced block — code is not prose.
         attrs.append((parts.codeRange, [.spellingState: 0]))
         let codeContent = ctx.ns.substring(with: parts.content)
