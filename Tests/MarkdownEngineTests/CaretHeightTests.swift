@@ -92,5 +92,10 @@ struct CaretHeightTests {
             #expect(!indicator.isHidden)
             #expect(indicator.frame == corrected)
         }
+        // On first focus AppKit can supply a caret at the view's left edge before layout catches up.
+        indicator.frame.origin.x = 0
+        #expect(indicator.frame.minX == corrected.minX, "The caret must stay in the text column on first focus")
+        #expect(abs(indicator.frame.minY - corrected.minY) < 0.5)
+        #expect(indicator.frame.size == corrected.size)
     }
 }

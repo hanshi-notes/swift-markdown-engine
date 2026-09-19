@@ -104,11 +104,13 @@ extension NativeTextView {
             }
         }
         // Segment baselines are relative to the line; frames are text-container-relative.
+        let x = rect.minX + textContainerOrigin.x
         let y = rect.minY + baseline - font.ascender + textContainerOrigin.y
         let height = ceil(font.ascender - font.descender)
-        guard abs(indicator.frame.minY - y) >= 0.5 || abs(indicator.frame.height - height) >= 0.5 else { return }
+        guard abs(indicator.frame.minX - x) >= 0.5 || abs(indicator.frame.minY - y) >= 0.5
+                || abs(indicator.frame.height - height) >= 0.5 else { return }
         isApplyingCaretShift = true
-        indicator.frame = CGRect(x: indicator.frame.minX, y: y, width: indicator.frame.width, height: height)
+        indicator.frame = CGRect(x: x, y: y, width: indicator.frame.width, height: height)
         isApplyingCaretShift = false
     }
 }
