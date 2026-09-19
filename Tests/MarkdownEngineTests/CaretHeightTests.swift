@@ -20,7 +20,7 @@ struct CaretHeightTests {
         configuration.showsMarkdownMarkersWhileEditing = false
         configuration.paragraph = ParagraphStyle(spacingFactor: 0, lineHeightExtraSpacing: extraSpacing)
         configuration.textInsets = TextInsets(horizontal: 12, vertical: 17)
-        var wrapper = NativeTextViewWrapper(text: Binding(get: { text }, set: { text = $0 }),
+        let wrapper = NativeTextViewWrapper(text: Binding(get: { text }, set: { text = $0 }),
                                             configuration: configuration, fontSize: 16, isEditable: true)
         let coordinator = wrapper.makeCoordinator()
         let scroll = wrapper.makeAppKitView(coordinator: coordinator)

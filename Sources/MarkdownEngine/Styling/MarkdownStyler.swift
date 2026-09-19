@@ -82,12 +82,6 @@ extension MarkdownStyler {
             guard let scopeBounds else { return false }
             return NSMaxRange(range) <= scopeBounds.lo || range.location >= scopeBounds.hi
         }
-
-        /// True when iteration (over location-sorted tokens) is past the scope.
-        func pastScope(_ range: NSRange) -> Bool {
-            guard let scopeBounds else { return false }
-            return range.location >= scopeBounds.hi
-        }
     }
 
     /// Binary-searched slice of a location-sorted, non-overlapping per-kind

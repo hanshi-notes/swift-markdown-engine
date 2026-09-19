@@ -244,7 +244,6 @@ extension NativeTextViewCoordinator {
         let tokens = parsed.tokens
         let codeTokens = parsed.codeTokens
         let latexTokens = parsed.latexTokens
-        let blockLatexTokens = parsed.blockLatexTokens
         let preEditActiveTokenIndices = pendingPreEditActiveTokenIndices ?? previousActiveTokenIndices
         pendingPreEditActiveTokenIndices = nil
 
@@ -430,7 +429,6 @@ extension NativeTextViewCoordinator {
         let tokens = parsed.tokens
         let codeTokens = parsed.codeTokens
         let latexTokens = parsed.latexTokens
-        let blockLatexTokens = parsed.blockLatexTokens
 
         let prevActive = activeTokenIndices
         PerfTrace.measure("selActive") {

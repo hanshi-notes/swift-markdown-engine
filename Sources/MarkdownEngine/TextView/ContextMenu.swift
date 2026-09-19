@@ -35,7 +35,7 @@ extension NativeTextViewWrapper.Coordinator {
         // with a title fallback.
         if let fontIndex = menu.items.firstIndex(where: { item in
             if item.title == "Font" { return true }
-            return item.submenu?.items.contains { $0.action == Selector("orderFrontFontPanel:") } ?? false
+            return item.submenu?.items.contains { $0.action == #selector(NSFontManager.orderFrontFontPanel(_:)) } ?? false
         }) {
             menu.removeItem(at: fontIndex)
         }
@@ -76,17 +76,6 @@ extension NativeTextViewWrapper.Coordinator {
 
     func isSelectionHighlight(in nsText: NSString, range: NSRange) -> Bool {
         return enclosingHighlightToken(for: range, in: nsText as String) != nil
-    }
-
-    /// Strikethrough is extension-supplied; without a registered
-    /// `StrikethroughExtension` no such token exists and the toggle only
-    /// wraps/unwraps literal `~~`.
-    func isSelectionStrikethrough(in nsText: NSString, range: NSRange) -> Bool {
-        return enclosingToken(of: .extensionSpan(StrikethroughExtension.identifier), for: range, in: nsText as String) != nil
-    }
-
-    func isSelectionInlineCode(in nsText: NSString, range: NSRange) -> Bool {
-        return enclosingToken(of: .inlineCode, for: range, in: nsText as String) != nil
     }
 
     /// Returns the smallest token of `kind` that fully contains the selection, or nil.
@@ -166,26 +155,6 @@ extension NativeTextViewWrapper.Coordinator {
         ) else { return }
         let newSelectionLocation = token.range.location + leftReplacement.count
         tv.setSelectedRange(NSRange(location: newSelectionLocation, length: content.count))
-    }
-
-    func isSelectionHeading(level: Int, in nsText: NSString, range: NSRange) -> Bool {
-        let lineRange = nsText.lineRange(for: range)
-        let line = nsText.substring(with: lineRange)
-        let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedLine.hasPrefix(String(repeating: "#", count: level) + " ")
-    }
-
-    func isSelectionList(in nsText: NSString, range: NSRange) -> Bool {
-        let lineRange = nsText.lineRange(for: range)
-        let line = nsText.substring(with: lineRange)
-        return line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("+ ")
-            || line.hasPrefix("\t• ") || line.hasPrefix("1. ")
-    }
-
-    func isSelectionBlockquote(in nsText: NSString, range: NSRange) -> Bool {
-        let lineRange = nsText.lineRange(for: range)
-        let line = nsText.substring(with: lineRange)
-        return line.hasPrefix("> ")
     }
 
     private func applyHeading(level: Int) {
@@ -527,7 +496,3 @@ extension NativeTextViewWrapper.Coordinator {
         tv.setSelectedRange(newRange)
     }
 }
-
-// Menu Item Validation (checkmark state) removed together with the built-in menu —
-// engine ships no UI. Expose the isSelection* checks as a query API if embedders
-// need menu state.

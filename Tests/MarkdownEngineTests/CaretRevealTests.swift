@@ -18,7 +18,7 @@ struct CaretRevealTests {
         var configuration = MarkdownEditorConfiguration.default
         configuration.showsMarkdownMarkersWhileEditing = false
         configuration.readingWidth = readingWidth
-        var wrapper = NativeTextViewWrapper(text: Binding(get: { text }, set: { text = $0 }),
+        let wrapper = NativeTextViewWrapper(text: Binding(get: { text }, set: { text = $0 }),
                                             configuration: configuration, isEditable: true)
         let coordinator = wrapper.makeCoordinator()
         let scroll = wrapper.makeAppKitView(coordinator: coordinator)

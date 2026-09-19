@@ -17,7 +17,7 @@ struct HiddenMarkerCaretTests {
         var text = source
         var configuration = MarkdownEditorConfiguration.default
         configuration.showsMarkdownMarkersWhileEditing = !markersHidden
-        var wrapper = NativeTextViewWrapper(text: Binding(get: { text }, set: { text = $0 }),
+        let wrapper = NativeTextViewWrapper(text: Binding(get: { text }, set: { text = $0 }),
                                             configuration: configuration, isEditable: true)
         let coordinator = wrapper.makeCoordinator()
         let scroll = wrapper.makeAppKitView(coordinator: coordinator)

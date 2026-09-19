@@ -19,7 +19,6 @@
 
 import AppKit
 import Foundation
-import os
 
 /// Bidirectional transform between the storage and display forms of wiki-links.
 public enum WikiLinkService {
@@ -52,8 +51,6 @@ public enum WikiLinkService {
     public static let displayPattern = #"(?<!!)\[\[([^\]\r\n]*)\]\]"#
 
     private static let storageLinkRegex = try! NSRegularExpression(pattern: storagePattern)
-    private static let displayLinkRegex = try! NSRegularExpression(pattern: displayPattern)
-    private static let logger = Logger(subsystem: "com.markdownengine.wikilinks", category: "WikiLink")
 
     /// Convert storage form `[[Name|<id>]]` to display `[[Name]]`, returning a display-range metadata map.
     ///
@@ -325,4 +322,3 @@ public enum WikiLinkService {
         return NSRange(location: displayRange.location + displayFragment.length, length: 0)
     }
 }
-

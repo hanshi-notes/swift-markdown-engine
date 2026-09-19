@@ -51,7 +51,7 @@ private struct VisibleLayoutEditor {
     func checkGeometry(at offset: Int) throws {
         let location = try #require(content.location(content.documentRange.location, offsetBy: offset))
         let cached = try #require(layout.textLayoutFragment(for: location)).layoutFragmentFrame
-        layout.enumerateTextLayoutFragments(from: content.documentRange.location, options: [.ensuresLayout]) {
+        _ = layout.enumerateTextLayoutFragments(from: content.documentRange.location, options: [.ensuresLayout]) {
             $0.layoutFragmentFrame.minY <= view.visibleRect.maxY
         }
         let reference = try #require(layout.textLayoutFragment(for: location)).layoutFragmentFrame
